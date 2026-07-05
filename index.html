@@ -156,6 +156,7 @@ tbody td{padding:8px 10px;vertical-align:middle;overflow:hidden;text-overflow:el
     <button class="btn success" onclick="showImport()"><i class="ti ti-upload"></i> Import</button>
     <button class="btn primary" onclick="showAddForm()"><i class="ti ti-plus"></i> Add</button>
     <button class="btn" onclick="exportCSV()" title="Export to CSV"><i class="ti ti-download"></i> Export</button>
+    <button class="btn" onclick="showPdfExport()" title="Export current view as PDF"><i class="ti ti-file-text"></i> PDF</button>
     <button class="btn" onclick="showVendorStats()" title="Vendor ESD performance"><i class="ti ti-chart-bar"></i> Vendor stats</button>
   </div>
 </div>
@@ -933,6 +934,133 @@ function exportCSV() {
   a.download = 'long-lead-tracker-' + new Date().toISOString().substring(0,10) + '.csv'; a.click();
 }
 
+// ── PDF EXPORT ────────────────────────────────────────────────
+// Column options available in the export dialog
+const PDF_COLS = [
+  { id:'item',       label:'Item',        get:i=>i.item||'' },
+  { id:'project',    label:'Project',     get:i=>i.project||'' },
+  { id:'location',   label:'Location',    get:i=>i.location||'' },
+  { id:'category',   label:'Category',    get:i=>i.category||'' },
+  { id:'pm',         label:'PM',          get:i=>i.pm||'' },
+  { id:'vendor',     label:'Vendor',      get:i=>i.vendor||'' },
+  { id:'po',         label:'PO #',        get:i=>i.po||'' },
+  { id:'stage',      label:'Stage',       get:i=>(Number(i.stage)+1)+'. '+(STAGES[Number(i.stage)]||'') },
+  { id:'esd',        label:'ESD',         get:i=>fmtDate(i.esd)||'' },
+  { id:'originalEsd',label:'Original ESD',get:i=>fmtDate(i.originalEsd)||'' },
+];
+// Default customer-friendly selection
+const PDF_DEFAULT = ['item','project','vendor','esd','stage'];
+
+function getPdfColSelection() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('ll_pdf_cols'));
+    if (Array.isArray(saved) && saved.length) return saved;
+  } catch(e) {}
+  return PDF_DEFAULT.slice();
+}
+
+function showPdfExport() {
+  const sel = getPdfColSelection();
+  const panel = document.getElementById('import-panel');
+  panel.style.display = 'block';
+  close_all_except_import();
+  const count = getVisibleSortedItems().length;
+  const proj = document.getElementById('proj-f').value || 'All Projects';
+  panel.innerHTML = `<div class="card">
+    <button class="close-x" onclick="panel_close()">×</button>
+    <h3><i class="ti ti-file-text"></i> Export PDF</h3>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:12px">
+      Exports the <strong>${count}</strong> item${count!==1?'s':''} currently shown, in the current sort order, for <strong>${esc(proj)}</strong>.
+      Filter and sort the table first, then choose columns below.
+    </div>
+    <div style="font-size:12px;font-weight:500;margin-bottom:8px">Columns to include</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:16px">
+      ${PDF_COLS.map(c=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+        <input type="checkbox" class="pdf-col-cb" value="${c.id}" ${sel.includes(c.id)?'checked':''} style="cursor:pointer">
+        ${c.label}
+      </label>`).join('')}
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn primary" onclick="generatePdf()"><i class="ti ti-download"></i> Generate PDF</button>
+      <span style="font-size:11px;color:var(--text2)">Opens a print dialog — choose "Save as PDF"</span>
+    </div>
+  </div>`;
+  panel.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+function generatePdf() {
+  const chosen = [...document.querySelectorAll('.pdf-col-cb:checked')].map(cb=>cb.value);
+  if (!chosen.length) { alert('Pick at least one column.'); return; }
+  localStorage.setItem('ll_pdf_cols', JSON.stringify(chosen));
+  const cols = PDF_COLS.filter(c => chosen.includes(c.id));
+  const data = getVisibleSortedItems();
+  const proj = document.getElementById('proj-f').value || 'All Projects';
+  const genDate = new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+  const logoEl = document.querySelector('.header img');
+  const logoSrc = logoEl ? logoEl.src : '';
+
+  // Active filter summary for the header
+  const filterBits = [];
+  const pmF = document.getElementById('pm-f') ? document.getElementById('pm-f').value : '';
+  const locF = document.getElementById('loc-f') ? document.getElementById('loc-f').value : '';
+  const riskF = document.getElementById('risk-f').value;
+  if (pmF) filterBits.push('PM: ' + pmF);
+  if (locF) filterBits.push('Location: ' + locF);
+  if (riskF) filterBits.push('Risk: ' + ({ar:'At risk',wa:'Watch',ok:'On track'}[riskF]||riskF));
+  if (sortCol) filterBits.push('Sorted by ' + (PDF_COLS.find(c=>c.id===sortCol)?.label || sortCol) + ' (' + (sortDir==='asc'?'ascending':'descending') + ')');
+
+  const rowsHtml = data.map(i => `<tr>${cols.map(c=>`<td>${esc(String(c.get(i)))}</td>`).join('')}</tr>`).join('');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Long Lead Material Report — ${esc(proj)}</title>
+  <style>
+    @page { size: landscape; margin: 0.5in; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; color:#1a1a18; margin:0; padding:0; }
+    .hdr { display:flex; align-items:center; justify-content:space-between; border-bottom:3px solid #e8580a; padding-bottom:12px; margin-bottom:6px; }
+    .hdr-left { display:flex; align-items:center; gap:14px; }
+    .hdr img { height:46px; width:auto; }
+    .title { font-size:18px; font-weight:bold; color:#1a1a18; }
+    .subtitle { font-size:12px; color:#e8580a; font-weight:bold; text-transform:uppercase; letter-spacing:0.05em; }
+    .meta { text-align:right; font-size:11px; color:#666; }
+    .meta strong { color:#1a1a18; }
+    .filters { font-size:10px; color:#888; margin-bottom:10px; }
+    table { width:100%; border-collapse:collapse; font-size:10px; }
+    thead th { background:#e8580a; color:#fff; text-align:left; padding:6px 8px; font-size:10px; border:0.5px solid #d64f08; }
+    tbody td { padding:5px 8px; border:0.5px solid #e5e5e5; vertical-align:top; }
+    tbody tr:nth-child(even) td { background:#fdf6f2; }
+    .foot { margin-top:14px; font-size:9px; color:#999; text-align:center; border-top:0.5px solid #ddd; padding-top:8px; }
+    .count { font-size:11px; color:#666; margin-bottom:10px; }
+  </style></head><body>
+    <div class="hdr">
+      <div class="hdr-left">
+        ${logoSrc?`<img src="${logoSrc}" alt="MC4">`:''}
+        <div>
+          <div class="subtitle">MC4 Construction</div>
+          <div class="title">Long Lead Material Report</div>
+        </div>
+      </div>
+      <div class="meta">
+        <div><strong>${esc(proj)}</strong></div>
+        <div>Generated ${genDate}</div>
+      </div>
+    </div>
+    ${filterBits.length?`<div class="filters">${esc(filterBits.join('  ·  '))}</div>`:''}
+    <div class="count">${data.length} item${data.length!==1?'s':''}</div>
+    <table>
+      <thead><tr>${cols.map(c=>`<th>${esc(c.label)}</th>`).join('')}</tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    <div class="foot">MC4 Construction · Las Vegas, NV — Generated from the Long Lead Material Dashboard on ${genDate}</div>
+  </body></html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) { alert('Please allow pop-ups for this site to export the PDF.'); return; }
+  w.document.write(html);
+  w.document.close();
+  // Give images a moment to load, then open the print dialog
+  setTimeout(() => { w.focus(); w.print(); }, 400);
+}
+
 // ── ADD / EDIT ────────────────────────────────────────────────
 function showAddForm(editItemOrId) {
   // Accept either an item object or a numeric ID
@@ -1332,6 +1460,46 @@ function applySortToData(data) {
   });
 }
 
+// Returns the exact set of items currently visible in the table (all active
+// filters + column filters + view), in the current sort order. Used by PDF export.
+function getVisibleSortedItems() {
+  const risk = document.getElementById('risk-f').value;
+  const pmFilter = document.getElementById('pm-f') ? document.getElementById('pm-f').value : '';
+  const locFilter = document.getElementById('loc-f') ? document.getElementById('loc-f').value : '';
+  const srch = document.getElementById('srch').value.toLowerCase();
+  const llOnly = document.getElementById('ll-only').checked;
+  const proj = document.getElementById('proj-f').value;
+  const data = items.filter(i => {
+    if (currentView === 'received') {
+      if (Number(i.stage) !== 7) return false;
+    } else {
+      if (Number(i.stage) === 7) return false;
+    }
+    if (currentView === 'active') {
+      if (llOnly && !i.longLead) return false;
+      if (risk && calcRisk(i) !== risk) return false;
+      if (activeStage !== 'all' && Number(i.stage) !== parseInt(activeStage)) return false;
+    }
+    if (proj && i.project !== proj) return false;
+    if (pmFilter && (i.pm||'') !== pmFilter) return false;
+    if (locFilter && (i.location||'') !== locFilter) return false;
+    if (srch && ![i.item,i.project,i.vendor,i.po,i.submittalNum,i.pm].some(f => (f||'').toLowerCase().includes(srch))) return false;
+    if (colFilters.item && String(i.item||'').trim() !== colFilters.item) return false;
+    if (colFilters.project && String(i.project||'').trim() !== colFilters.project) return false;
+    if (colFilters.location && String(i.location||'').trim() !== colFilters.location) return false;
+    if (colFilters.category && String(i.category||'').trim() !== colFilters.category) return false;
+    if (colFilters.vendor && String(i.vendor||'').trim() !== colFilters.vendor) return false;
+    if (colFilters.po && String(i.po||'').trim() !== colFilters.po) return false;
+    if (colFilters.stage) {
+      const stageLabel = (Number(i.stage)+1) + '. ' + (STAGES[Number(i.stage)]||'');
+      if (stageLabel !== colFilters.stage) return false;
+    }
+    if (colFilters.esd && String(i.esd||'').trim() !== colFilters.esd) return false;
+    return true;
+  });
+  return applySortToData(data);
+}
+
 function close_all(){
   ['import-panel','add-form','detail-panel'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
 }
@@ -1557,8 +1725,8 @@ function buildColHeaders() {
     th.style.cursor = 'default';
     th.innerHTML = `
       <div style="display:flex;flex-direction:column;gap:3px">
-        <span onclick="setSort('${col.field}')" style="cursor:pointer;white-space:nowrap;font-size:11px;font-weight:500;color:${labelColor}">
-          ${col.label}${arrow}
+        <span onclick="setSort('${col.field}')" style="cursor:pointer;white-space:nowrap;font-size:11px;font-weight:500;color:${labelColor}" title="Click to sort by ${col.label}">
+          ${col.label}${arrow || '<span style="opacity:0.3;font-size:9px"> ⇅</span>'}
         </span>
         <select
           onclick="event.stopPropagation()"
