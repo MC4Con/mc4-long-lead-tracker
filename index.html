@@ -234,12 +234,26 @@ const STAGE_HELP = [
 
 function fmtDate(val) {
   if (!val) return '';
-  // Handle ISO timestamps like 2026-06-26T05:00:00.000Z
-  const d = new Date(val);
-  if (isNaN(d)) return val; // if unparseable just return as-is
-  return (d.getMonth()+1).toString().padStart(2,'0') + '/' +
-         d.getDate().toString().padStart(2,'0') + '/' +
-         d.getFullYear();
+  // If already in MM/DD/YYYY form, return as-is (no timezone math)
+  if (typeof val === 'string' && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(val.trim())) {
+    const [m,d,y] = val.trim().split('/');
+    return m.padStart(2,'0') + '/' + d.padStart(2,'0') + '/' + y;
+  }
+  // For ISO date/timestamp strings (from Google Sheets), extract the calendar
+  // date directly to avoid timezone conversion shifting the day backward.
+  if (typeof val === 'string') {
+    const isoMatch = val.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) {
+      const [, y, m, d] = isoMatch;
+      return m + '/' + d + '/' + y;
+    }
+  }
+  // Fallback: use UTC getters so a midnight-UTC timestamp doesn't roll back a day
+  const dt = (val instanceof Date) ? val : new Date(val);
+  if (isNaN(dt)) return val; // if unparseable just return as-is
+  return (dt.getUTCMonth()+1).toString().padStart(2,'0') + '/' +
+         dt.getUTCDate().toString().padStart(2,'0') + '/' +
+         dt.getUTCFullYear();
 }
 
 let items = [], nextId = 1, activeStage = 'all', importPreview = null, importSource = null, saving = false;
