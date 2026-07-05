@@ -281,6 +281,7 @@ async function loadFromSheet() {
         po: r.po || '',
         submittalNum: r.submittalNum || '',
         esd: r.esd ? fmtDate(r.esd) : '',
+        originalEsd: r.originalEsd ? fmtDate(r.originalEsd) : (r.esd ? fmtDate(r.esd) : ''),
         stage: parseInt(r.stage) || 0,
         blocked: r.blocked === true || r.blocked === 'true' || r.blocked === 'TRUE',
         longLead: r.longLead === true || r.longLead === 'true' || r.longLead === 'TRUE',
@@ -293,7 +294,12 @@ async function loadFromSheet() {
         category: r.category || '',
         lastEditedBy: r.lastEditedBy || '',
         lastEditedAt: r.lastEditedAt || '',
-        esdHistory: (() => { try { return r.esdHistory ? JSON.parse(r.esdHistory) : []; } catch(e) { return []; } })(),
+        esdHistory: (() => { try {
+          const hist = r.esdHistory ? JSON.parse(r.esdHistory) : [];
+          // One-time migration: any legacy entry without a 'kind' is treated as a
+          // correction (not counted) so vendor push counts reset to 0 cleanly.
+          return hist.map(h => h.kind ? h : { ...h, kind: 'correction' });
+        } catch(e) { return []; } })(),
         pm: r.pm || (() => {
           const notes = r.notes || '';
           const match = notes.match(/Ordered by: ([^\n]+?)( ·|$)/);
@@ -418,11 +424,17 @@ function isSlowVendor(i) {
   return SLOW_VENDORS.some(v => (i.vendor||'').toLowerCase().includes(v));
 }
 
+function vendorPushCount(i) {
+  // Count only ESD changes explicitly classified as vendor delays.
+  if (!i.esdHistory) return 0;
+  return i.esdHistory.filter(h => h && h.kind === 'vendor').length;
+}
+
 function calcRisk(i) {
   if (i.blocked) return 'ar';
   if (i.manualRisk) return 'ar';
-  if (i.esdHistory && i.esdHistory.length >= 3) return 'ar'; // chronic date pusher
-  if (i.esdHistory && i.esdHistory.length >= 2) return 'wa'; // watch — pushed twice
+  if (vendorPushCount(i) >= 3) return 'ar'; // chronic date pusher
+  if (vendorPushCount(i) >= 2) return 'wa'; // watch — pushed twice
   if (i.stage === 7) return 'ok';
 
   const today = new Date();
@@ -476,8 +488,8 @@ function calcRisk(i) {
 function calcRiskReason(i) {
   if (i.blocked) return 'Item is marked blocked';
   if (i.manualRisk) return i.manualRiskReason ? 'Manually flagged: ' + i.manualRiskReason : 'Manually flagged as at risk';
-  if (i.esdHistory && i.esdHistory.length >= 3) return `ESD pushed ${i.esdHistory.length} times — chronic date slippage`;
-  if (i.esdHistory && i.esdHistory.length >= 2) return `ESD pushed ${i.esdHistory.length} times — watch this vendor`;
+  if (vendorPushCount(i) >= 3) return `Vendor delayed ESD ${vendorPushCount(i)} times — chronic date slippage`;
+  if (vendorPushCount(i) >= 2) return `Vendor delayed ESD ${vendorPushCount(i)} times — watch this vendor`;
   if (i.stage === 7) return '';
   const today = new Date();
   const slow = isSlowVendor(i);
@@ -676,7 +688,7 @@ function render() {
       <td style="font-size:11px;color:${i.longLead?'var(--info)':'var(--text2)'}">${i.stage+1}. ${STAGES[i.stage]}</td>
       <td style="font-size:11px;color:var(--text2)">
         ${fmtDate(i.esd)||'—'}
-        ${i.esdHistory&&i.esdHistory.length>0?`<span title="Pushed ${i.esdHistory.length} time${i.esdHistory.length!==1?'s':''}" style="font-size:9px;background:${i.esdHistory.length>=3?'var(--danger-bg)':i.esdHistory.length>=2?'var(--warn-bg)':'var(--bg2)'};color:${i.esdHistory.length>=3?'var(--danger)':i.esdHistory.length>=2?'var(--warn)':'var(--text2)'};padding:1px 4px;border-radius:3px;margin-left:3px">↑${i.esdHistory.length}</span>`:''}
+        ${vendorPushCount(i)>0?`<span title="Vendor delayed ${vendorPushCount(i)} time${vendorPushCount(i)!==1?'s':''}" style="font-size:9px;background:${vendorPushCount(i)>=3?'var(--danger-bg)':vendorPushCount(i)>=2?'var(--warn-bg)':'var(--bg2)'};color:${vendorPushCount(i)>=3?'var(--danger)':vendorPushCount(i)>=2?'var(--warn)':'var(--text2)'};padding:1px 4px;border-radius:3px;margin-left:3px">↑${vendorPushCount(i)}</span>`:''}
       </td>
     </tr>`).join('');
 }
@@ -992,7 +1004,8 @@ function saveEdit(id) {
       from: oldESD,
       to: newESD,
       by: getCurrentUser() || 'Unknown',
-      at: new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})
+      at: new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}),
+      kind: 'correction'
     });
   }
   stampEdit(i);
@@ -1037,7 +1050,8 @@ function showDetail(id) {
       <div class="df"><label>Vendor</label><input id="ed-vendor-${i.id}" value="${esc(i.vendor||'')}" style="${inStyle}"></div>
       <div class="df"><label>PO # (KOJO)</label><input id="ed-po-${i.id}" value="${esc(i.po||'')}" style="${inStyle}"></div>
       <div class="df"><label>Submittal # (Autodesk)</label><input id="ed-submittalNum-${i.id}" value="${esc(i.submittalNum||'')}" style="${inStyle}">${i.submittalTitle&&i.submittalTitle!==i.item?'<span style="font-size:11px;color:var(--text2)">'+esc(i.submittalTitle)+'</span>':''}</div>
-      <div class="df"><label>ESD (MM/DD/YYYY)</label><input id="ed-esd-${i.id}" value="${esc(i.esd||'')}" placeholder="e.g. 08/15/2026" style="${inStyle}"></div>
+      <div class="df"><label>Original ESD <span style="font-size:10px;color:var(--text2)">(baseline — edits don't affect vendor rating)</span></label><input id="ed-originalEsd-${i.id}" value="${esc(i.originalEsd||'')}" placeholder="e.g. 08/15/2026" style="${inStyle}"></div>
+      <div class="df"><label>Current ESD (MM/DD/YYYY)</label><input id="ed-esd-${i.id}" value="${esc(i.esd||'')}" placeholder="e.g. 08/15/2026" style="${inStyle}"></div>
       <div class="df" style="grid-column:1/-1"><label>Risk</label><span><span class="badge ${r}">${{ar:'At risk',wa:'Watch',ok:'On track'}[r]}</span> <span style="font-size:11px;color:var(--text2);margin-left:6px">${calcRiskReason(i)}</span></span></div>
       ${i.qty?`<div class="df"><label>Qty</label><span>${esc(i.qty)}</span></div>`:''}
       ${i.total?`<div class="df"><label>PO value</label><span>$${Number(i.total).toLocaleString()}</span></div>`:''}
@@ -1050,12 +1064,16 @@ function showDetail(id) {
       </div>`:''}
       <div class="df" style="grid-column:1/-1"><label>Notes</label><textarea id="ed-notes-${i.id}" rows="2" style="width:100%;font-size:12px;padding:5px 7px;border-radius:var(--radius);border:0.5px solid var(--border2);background:var(--bg);color:var(--text);resize:vertical">${esc(i.notes||'')}</textarea></div>
       ${i.esdHistory&&i.esdHistory.length>0?`<div class="df" style="grid-column:1/-1">
-        <label>ESD history <span style="font-size:10px;color:var(--text2)">(pushed ${i.esdHistory.length} time${i.esdHistory.length!==1?'s':''})</span></label>
+        <label>ESD history <span style="font-size:10px;color:var(--text2)">(vendor delays: ${i.esdHistory.filter(h=>h.kind==='vendor').length} · corrections: ${i.esdHistory.filter(h=>h.kind!=='vendor').length})</span></label>
         <div style="font-size:11px;color:var(--text2)">
-          ${i.esdHistory.map((h,idx)=>`<div style="padding:3px 0;border-bottom:0.5px solid var(--border);display:flex;gap:8px;flex-wrap:wrap">
+          ${i.esdHistory.map((h,idx)=>`<div style="padding:3px 0;border-bottom:0.5px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
             <span style="color:var(--danger);flex-shrink:0">${esc(h.from)}</span>
             <span style="color:var(--text2)">→</span>
             <span style="color:var(--text);flex-shrink:0">${esc(h.to)}</span>
+            ${h.kind==='vendor'
+              ? '<span style="font-size:9px;background:var(--danger-bg);color:var(--danger);padding:1px 5px;border-radius:3px;flex-shrink:0">vendor delay</span>'
+              : '<span style="font-size:9px;background:var(--bg2);color:var(--text2);padding:1px 5px;border-radius:3px;flex-shrink:0">correction · not counted</span>'}
+            <button onclick="reclassifyEsdEntry(${i.id},${idx})" style="font-size:9px;background:none;border:0.5px solid var(--border2);border-radius:3px;color:var(--text2);cursor:pointer;padding:1px 5px;flex-shrink:0" title="Switch between vendor delay and correction">⇄ reclassify</button>
             <span style="color:var(--text2);font-size:10px;margin-left:auto">${esc(h.by||'')} · ${esc(h.at||'')}</span>
           </div>`).join('')}
         </div>
@@ -1089,17 +1107,55 @@ function saveDetailEdits(id) {
   i.vendor = val('vendor') ?? i.vendor;
   i.po = val('po') ?? i.po;
   i.submittalNum = val('submittalNum') ?? i.submittalNum;
+
+  // ── ESD handling: Original (baseline) + Current, with intent capture ──
+  const newOriginal = val('originalEsd');
   const newEsd = val('esd');
+
+  // First-time entry: if no ESD existed and a Current ESD is now set,
+  // auto-set Original to match and don't count anything.
+  const hadNoEsd = !i.esd;
+
+  // Original ESD edits are always corrections — never counted.
+  if (newOriginal !== undefined) i.originalEsd = newOriginal;
+
   if (newEsd !== undefined && newEsd !== (i.esd || '')) {
-    if (i.esd && newEsd) {
+    if (hadNoEsd) {
+      // First date entered for this item → set both, no history entry
+      i.esd = newEsd;
+      if (!i.originalEsd) i.originalEsd = newEsd;
+    } else if (i.esd && newEsd) {
+      // Changing an existing Current ESD → ask why
+      const isVendor = confirm(
+        'ESD changed from ' + i.esd + ' to ' + newEsd + '.\n\n' +
+        'Is this a VENDOR DELAY (counts toward the vendor\u2019s rating)?\n\n' +
+        'OK = Vendor delay\nCancel = Correction (not counted)'
+      );
       i.esdHistory = i.esdHistory || [];
-      i.esdHistory.push({ from: i.esd, to: newEsd, by: getCurrentUser() || '', at: new Date().toLocaleDateString() });
+      i.esdHistory.push({
+        from: i.esd, to: newEsd,
+        by: getCurrentUser() || '',
+        at: new Date().toLocaleDateString(),
+        kind: isVendor ? 'vendor' : 'correction'
+      });
+      i.esd = newEsd;
+    } else {
+      i.esd = newEsd;
     }
-    i.esd = newEsd;
   }
   const notesEl = document.getElementById('ed-notes-' + id); if (notesEl) i.notes = notesEl.value;
   stampEdit(i);
   buildProjFilter(); buildPills(); render(); saveToSheet();
+  showDetail(id);
+}
+
+// Flip a history entry between vendor delay and correction
+function reclassifyEsdEntry(id, idx) {
+  const i = items.find(x => x.id === id); if (!i || !i.esdHistory || !i.esdHistory[idx]) return;
+  const cur = i.esdHistory[idx].kind === 'vendor' ? 'vendor' : 'correction';
+  i.esdHistory[idx].kind = cur === 'vendor' ? 'correction' : 'vendor';
+  stampEdit(i);
+  buildPills(); render(); saveToSheet();
   showDetail(id);
 }
 function advanceStage(id){const i=items.find(x=>x.id===id);if(!i||i.stage>=7)return;i.stage++;i.blocked=false;i.submittalRejected=false;const today=new Date().toISOString().substring(0,10);if(i.stage===1&&!i.poDate)i.poDate=today;if(i.stage===2)i.submittedDate=today;if(i.stage===4)i.releasedDate=today;buildPills();render();saveToSheet();showDetail(id);}
@@ -2038,7 +2094,7 @@ function confirmBulkESD() {
     // Log ESD change if date is different
     if (i.esd && i.esd !== formatted) {
       if (!i.esdHistory) i.esdHistory = [];
-      i.esdHistory.push({ from: i.esd, to: formatted, by: user, at: now });
+      i.esdHistory.push({ from: i.esd, to: formatted, by: user, at: now, kind: 'correction' });
     }
     i.esd = formatted;
     stampEdit(i);
@@ -2174,7 +2230,7 @@ function showVendorStats() {
     const v = i.vendor;
     if (!vendorMap[v]) vendorMap[v] = { items:0, totalPushes:0, maxPushes:0, itemsWithPushes:0 };
     vendorMap[v].items++;
-    const pushes = (i.esdHistory || []).length;
+    const pushes = vendorPushCount(i);
     if (pushes > 0) {
       vendorMap[v].totalPushes += pushes;
       vendorMap[v].itemsWithPushes++;
