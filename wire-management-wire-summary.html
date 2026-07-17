@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SupplySite™ — Wire Summary</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --mc4-orange: #e8580a; --mc4-orange-light: #fdeee4; --ink: #1a1a1a; --ink-soft: #5c5c5c;
+    --line: #e5e2dd; --bg: #faf9f7; --card: #ffffff; --green: #2f7d4f; --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+  #configBanner { background: #fff3cd; border-bottom: 1px solid #e0c46c; padding: 12px 24px; font-size: 14px; color: #6b5410; display: none; }
+  header { background: var(--card); border-bottom: 1px solid var(--line); padding: 18px 28px; display: flex; align-items: center; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-mark { width: 34px; height: 34px; background: var(--mc4-orange); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 15px; }
+  .brand-text { font-weight: 700; font-size: 17px; letter-spacing: -0.2px; }
+  .brand-text span { color: var(--mc4-orange); }
+  nav { display: flex; gap: 4px; margin-left: 28px; }
+  nav a { padding: 7px 14px; border-radius: 7px; font-size: 14px; color: var(--ink-soft); text-decoration: none; font-weight: 500; }
+  nav a.active { background: var(--mc4-orange-light); color: var(--mc4-orange); }
+  main { max-width: 780px; margin: 0 auto; padding: 28px; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; margin-bottom: 20px; }
+  .panel h2 { margin: 0 0 4px; font-size: 16px; }
+  .panel p.sub { margin: 0 0 18px; font-size: 13.5px; color: var(--ink-soft); }
+  .field select { width: 100%; max-width: 420px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 7px; font-size: 14px; }
+
+  .summary-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .summary-header h2 { font-size: 18px; }
+  .summary-header .count { font-size: 13px; color: var(--ink-soft); }
+
+  .wire-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f2f0ec; }
+  .wire-row:last-child { border-bottom: none; }
+  .wire-desc { font-size: 14.5px; font-weight: 600; }
+  .wire-meta { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+  .wire-qty { font-size: 16px; font-weight: 700; color: var(--mc4-orange); white-space: nowrap; }
+
+  .empty-note { text-align: center; padding: 40px 20px; color: var(--ink-soft); font-size: 14px; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--ink); color: white; padding: 11px 20px; border-radius: 8px; font-size: 13.5px; opacity: 0; pointer-events: none; transition: opacity 0.2s ease; z-index: 100; }
+  .toast.show { opacity: 1; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div id="configBanner">⚠️ Not connected to Supabase yet.</div>
+
+<header>
+  <div class="brand">
+    <div class="brand-mark">MC4</div>
+    <div class="brand-text">Supply<span>Site™</span></div>
+  </div>
+  <nav>
+    <a href="wire-management-projects.html">Projects</a>
+    <a href="wire-management-bom-import.html">BOM Import</a>
+    <a href="#" class="active">Wire Summary</a>
+    <a href="wire-management-import-projects.html">Import Job List</a>
+  </nav>
+</header>
+
+<main>
+  <div class="panel">
+    <h2>Project Wire Summary</h2>
+    <p class="sub">Only items you checked "Wire?" during import show up here, totaled by description.</p>
+    <div class="field">
+      <select id="projectSelect"><option value="">Loading projects…</option></select>
+    </div>
+  </div>
+
+  <div class="panel hidden" id="summaryPanel">
+    <div class="summary-header">
+      <h2 id="projectTitle"></h2>
+      <span class="count" id="itemCount"></span>
+    </div>
+    <div id="wireList"></div>
+    <div id="emptyNote" class="empty-note hidden">No wire items marked yet for this project. Go to BOM Import and check "Wire?" next to the items you want counted here.</div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const SUPABASE_URL = "https://rqjpwwnfcqezmlnzdofm.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable__Kc0C8doDwh7KqxBgg_8aQ_7PXXsFi0";
+
+  const isConfigured = !SUPABASE_URL.includes("PASTE_") && !SUPABASE_ANON_KEY.includes("PASTE_");
+  if (!isConfigured) document.getElementById('configBanner').style.display = 'block';
+  const supabaseClient = isConfigured ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2400);
+  }
+
+  async function loadProjects() {
+    const sel = document.getElementById('projectSelect');
+    if (!supabaseClient) { sel.innerHTML = '<option value="">Connect Supabase first</option>'; return; }
+    const { data, error } = await supabaseClient.from('projects').select('id, project_number, project_name').order('project_number');
+    if (error || !data || data.length === 0) {
+      sel.innerHTML = '<option value="">No projects yet</option>';
+      return;
+    }
+    sel.innerHTML = '<option value="">Select a project…</option>' +
+      data.map(p => `<option value="${p.id}" data-name="${p.project_number} — ${p.project_name}">${p.project_number} — ${p.project_name}</option>`).join('');
+  }
+  loadProjects();
+
+  document.getElementById('projectSelect').addEventListener('change', async function() {
+    const projectId = this.value;
+    if (!projectId) { document.getElementById('summaryPanel').classList.add('hidden'); return; }
+    const label = this.options[this.selectedIndex].dataset.name;
+    await loadSummary(projectId, label);
+  });
+
+  async function loadSummary(projectId, label) {
+    const { data: activeImport, error: importErr } = await supabaseClient
+      .from('bom_imports').select('id, version_number').eq('project_id', projectId).eq('is_active', true).maybeSingle();
+
+    if (importErr || !activeImport) {
+      showToast('No BOM imported for this project yet.');
+      document.getElementById('summaryPanel').classList.add('hidden');
+      return;
+    }
+
+    const { data: items, error: itemsErr } = await supabaseClient
+      .from('bom_items').select('*').eq('bom_import_id', activeImport.id).eq('is_wire', true);
+
+    if (itemsErr) { showToast('Error loading wire items: ' + itemsErr.message); return; }
+
+    renderSummary(label, items || []);
+  }
+
+  function renderSummary(label, items) {
+    document.getElementById('summaryPanel').classList.remove('hidden');
+    document.getElementById('projectTitle').textContent = label;
+
+    // Group by description, sum quantity (only when units match; otherwise keep separate lines)
+    const groups = new Map();
+    items.forEach(item => {
+      const key = `${item.description}__${item.unit_normalized || ''}`;
+      if (!groups.has(key)) {
+        groups.set(key, { description: item.description, unit: item.unit_normalized || '', quantity: 0, itemNumbers: new Set() });
+      }
+      const g = groups.get(key);
+      g.quantity += parseFloat(item.quantity) || 0;
+      if (item.item_number) g.itemNumbers.add(item.item_number);
+    });
+
+    const grouped = Array.from(groups.values()).sort((a, b) => a.description.localeCompare(b.description));
+
+    document.getElementById('itemCount').textContent = `${grouped.length} wire type${grouped.length === 1 ? '' : 's'}`;
+
+    const wrap = document.getElementById('wireList');
+    const emptyNote = document.getElementById('emptyNote');
+
+    if (grouped.length === 0) {
+      wrap.innerHTML = '';
+      emptyNote.classList.remove('hidden');
+      return;
+    }
+    emptyNote.classList.add('hidden');
+
+    wrap.innerHTML = grouped.map(g => `
+      <div class="wire-row">
+        <div>
+          <div class="wire-desc">${g.description}</div>
+          ${g.itemNumbers.size > 0 ? `<div class="wire-meta">${Array.from(g.itemNumbers).join(', ')}</div>` : ''}
+        </div>
+        <div class="wire-qty">${g.quantity.toLocaleString()} ${g.unit}</div>
+      </div>
+    `).join('');
+  }
+</script>
+
+</body>
+</html>
