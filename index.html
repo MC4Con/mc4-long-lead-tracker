@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SupplySite™ — MC4 Construction</title>
+<style>
+  :root {
+    --mc4-orange: #e8580a; --mc4-orange-light: #fdeee4; --ink: #1a1a1a; --ink-soft: #5c5c5c;
+    --line: #e5e2dd; --bg: #faf9f7; --card: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink);
+  }
+  header { padding: 28px 28px 0; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-mark { width: 34px; height: 34px; background: var(--mc4-orange); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 15px; }
+  .brand-text { font-weight: 700; font-size: 17px; letter-spacing: -0.2px; }
+  .brand-text span { color: var(--mc4-orange); }
+
+  main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px 24px; }
+  .hub { width: 100%; max-width: 780px; }
+  .hub-title { font-size: 26px; font-weight: 700; margin: 0 0 6px; text-align: center; }
+  .hub-sub { font-size: 14.5px; color: var(--ink-soft); text-align: center; margin: 0 0 36px; }
+
+  .choices { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 640px) { .choices { grid-template-columns: 1fr; } }
+
+  .choice-card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 30px 26px; text-decoration: none; color: var(--ink);
+    display: flex; flex-direction: column; gap: 10px;
+    transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  }
+  .choice-card:hover { border-color: var(--mc4-orange); box-shadow: 0 6px 20px rgba(232,88,10,0.12); transform: translateY(-2px); }
+  .choice-icon { font-size: 30px; }
+  .choice-title { font-size: 18px; font-weight: 700; }
+  .choice-desc { font-size: 13.5px; color: var(--ink-soft); line-height: 1.5; }
+  .choice-arrow { margin-top: auto; font-size: 13px; font-weight: 600; color: var(--mc4-orange); display: flex; align-items: center; gap: 4px; }
+
+  footer { padding: 20px; text-align: center; font-size: 12px; color: var(--ink-soft); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="brand-mark">MC4</div>
+    <div class="brand-text">Supply<span>Site™</span></div>
+  </div>
+</header>
+
+<main>
+  <div class="hub">
+    <h1 class="hub-title">Where do you want to go?</h1>
+    <p class="hub-sub">Pick a tool below.</p>
+
+    <div class="choices">
+      <a class="choice-card" href="long-lead-tracker.html">
+        <div class="choice-icon">📦</div>
+        <div class="choice-title">Long Lead Material Tracker</div>
+        <div class="choice-desc">Track long lead materials through the full pipeline — from order to delivery, with vendor performance and shipping reports.</div>
+        <div class="choice-arrow">Open →</div>
+      </a>
+
+      <a class="choice-card" href="wire-management.html">
+        <div class="choice-icon">🔌</div>
+        <div class="choice-title">Wire Management</div>
+        <div class="choice-desc">Import BOMs by job, track wire quantities, and see standardized wire totals across every active project.</div>
+        <div class="choice-arrow">Open →</div>
+      </a>
+    </div>
+  </div>
+</main>
+
+<footer>MC4 Construction — Las Vegas, NV</footer>
+
+</body>
+</html>
