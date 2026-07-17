@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SupplySite™ — Wire Management</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --mc4-orange: #e8580a;
+    --mc4-orange-light: #fdeee4;
+    --ink: #1a1a1a;
+    --ink-soft: #5c5c5c;
+    --line: #e5e2dd;
+    --bg: #faf9f7;
+    --card: #ffffff;
+    --green: #2f7d4f;
+    --amber: #b8860b;
+    --grey: #8a8a8a;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+  }
+
+  /* ---- CONFIG BANNER (shows only if not connected) ---- */
+  #configBanner {
+    background: #fff3cd;
+    border-bottom: 1px solid #e0c46c;
+    padding: 12px 24px;
+    font-size: 14px;
+    color: #6b5410;
+    display: none;
+  }
+  #configBanner code { background: #fff; padding: 2px 6px; border-radius: 4px; }
+
+  header {
+    background: var(--card);
+    border-bottom: 1px solid var(--line);
+    padding: 18px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .brand-mark {
+    width: 34px; height: 34px;
+    background: var(--mc4-orange);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-weight: 700; font-size: 15px;
+  }
+  .brand-text { font-weight: 700; font-size: 17px; letter-spacing: -0.2px; }
+  .brand-text span { color: var(--mc4-orange); }
+  nav { display: flex; gap: 4px; margin-left: 28px; }
+  nav a {
+    padding: 7px 14px;
+    border-radius: 7px;
+    font-size: 14px;
+    color: var(--ink-soft);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  nav a.active { background: var(--mc4-orange-light); color: var(--mc4-orange); }
+
+  main { max-width: 1180px; margin: 0 auto; padding: 28px; }
+
+  .toolbar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  .search-wrap { position: relative; flex: 1; max-width: 380px; }
+  .search-wrap input {
+    width: 100%;
+    padding: 9px 14px 9px 34px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-size: 14px;
+    background: var(--card);
+  }
+  .search-wrap input:focus { outline: none; border-color: var(--mc4-orange); }
+  .search-icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); opacity: 0.4; }
+
+  select#statusFilter {
+    padding: 9px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--card);
+    font-size: 14px;
+    color: var(--ink);
+  }
+
+  .btn-primary {
+    margin-left: auto;
+    background: var(--mc4-orange);
+    color: white;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-primary:hover { background: #cf4d08; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 14px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 18px;
+    transition: box-shadow 0.15s ease;
+  }
+  .card:hover { box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
+  .card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+  }
+  .proj-num { font-size: 12px; color: var(--ink-soft); font-weight: 600; letter-spacing: 0.3px; }
+  .proj-name { font-size: 16px; font-weight: 700; margin-top: 2px; }
+  .status-pill {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 20px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    white-space: nowrap;
+  }
+  .status-Active { background: #e6f4eb; color: var(--green); }
+  .status-Archived { background: #f0f0f0; color: var(--grey); }
+  .status-On.Hold, .status-On_Hold { background: #fdf1de; color: var(--amber); }
+  .status-Complete { background: #e7edfb; color: #2c5cb8; }
+
+  .card-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: var(--ink-soft);
+    padding: 5px 0;
+    border-top: 1px solid #f2f0ec;
+  }
+  .card-row:first-of-type { border-top: none; padding-top: 0; }
+  .card-row b { color: var(--ink); font-weight: 500; }
+
+  .card-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .card-actions button {
+    flex: 1;
+    padding: 7px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--card);
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .card-actions button:hover { border-color: var(--mc4-orange); color: var(--mc4-orange); }
+
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--ink-soft);
+  }
+  .empty-state .brand-mark { margin: 0 auto 16px; }
+
+  /* ---- MODAL ---- */
+  .overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(20,20,20,0.4);
+    align-items: center; justify-content: center;
+    z-index: 50;
+  }
+  .overlay.show { display: flex; }
+  .modal {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 26px;
+    width: 480px;
+    max-width: 92vw;
+    max-height: 88vh;
+    overflow-y: auto;
+  }
+  .modal h2 { margin: 0 0 18px; font-size: 18px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); margin-bottom: 5px; }
+  .field input, .field select {
+    width: 100%;
+    padding: 9px 11px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    font-size: 14px;
+  }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--mc4-orange); }
+  .field-row { display: flex; gap: 12px; }
+  .field-row .field { flex: 1; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+  .modal-actions button { flex: 1; padding: 10px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .btn-cancel { background: var(--bg); border: 1px solid var(--line); color: var(--ink-soft); }
+  .btn-save { background: var(--mc4-orange); border: none; color: white; }
+
+  .toast {
+    position: fixed;
+    bottom: 24px; left: 50%;
+    transform: translateX(-50%);
+    background: var(--ink);
+    color: white;
+    padding: 11px 20px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    z-index: 100;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div id="configBanner">
+  ⚠️ Not connected to Supabase yet. Open this file and set <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code> near the top of the script.
+</div>
+
+<header>
+  <div style="display:flex; align-items:center;">
+    <div class="brand">
+      <div class="brand-mark">MC4</div>
+      <div class="brand-text">Supply<span>Site™</span></div>
+    </div>
+    <nav>
+      <a href="#" class="active">Projects</a>
+      <a href="wire-management-bom-import.html">BOM Import</a>
+      <a href="wire-management-import-projects.html">Import Job List</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="toolbar">
+    <div class="search-wrap">
+      <span class="search-icon">🔍</span>
+      <input id="searchInput" type="text" placeholder="Search project, number, or customer...">
+    </div>
+    <select id="statusFilter">
+      <option value="">All statuses</option>
+      <option value="Active">Active</option>
+      <option value="On Hold">On Hold</option>
+      <option value="Complete">Complete</option>
+      <option value="Archived">Archived</option>
+    </select>
+    <button class="btn-primary" id="newProjectBtn">+ New Project</button>
+  </div>
+
+  <div id="grid" class="grid"></div>
+  <div id="emptyState" class="empty-state" style="display:none;">
+    <div class="brand-mark" style="width:44px;height:44px;font-size:18px;">MC4</div>
+    <p><b>No projects yet.</b><br>Create your first project to start importing BOMs.</p>
+  </div>
+</main>
+
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h2 id="modalTitle">New Project</h2>
+    <input type="hidden" id="projectId">
+    <div class="field">
+      <label>Project Number</label>
+      <input id="f_project_number" placeholder="e.g. 24-118">
+    </div>
+    <div class="field">
+      <label>Project Name</label>
+      <input id="f_project_name" placeholder="e.g. Blue Diamond Signals">
+    </div>
+    <div class="field">
+      <label>Customer</label>
+      <input id="f_customer" placeholder="e.g. City of Las Vegas">
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Project Manager</label>
+        <select id="f_project_manager">
+          <option value="">Select PM</option>
+          <option value="Samantha Brown">Samantha Brown</option>
+          <option value="Allen Kerr">Allen Kerr</option>
+          <option value="Rob Smith">Rob Smith</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Status</label>
+        <select id="f_status">
+          <option value="Active">Active</option>
+          <option value="On Hold">On Hold</option>
+          <option value="Complete">Complete</option>
+          <option value="Archived">Archived</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Start Date</label>
+        <input id="f_start_date" type="date">
+      </div>
+      <div class="field">
+        <label>Completion Date</label>
+        <input id="f_completion_date" type="date">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="cancelBtn">Cancel</button>
+      <button class="btn-save" id="saveBtn">Save Project</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ====== CONFIG — paste your Supabase details here ======
+  const SUPABASE_URL = "https://rqjpwwnfcqezmlnzdofm.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable__Kc0C8doDwh7KqxBgg_8aQ_7PXXsFi0";
+  // =========================================================
+
+  const isConfigured = !SUPABASE_URL.includes("PASTE_") && !SUPABASE_ANON_KEY.includes("PASTE_");
+  if (!isConfigured) document.getElementById('configBanner').style.display = 'block';
+
+  const supabaseClient = isConfigured
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    : null;
+
+  let projects = [];
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2200);
+  }
+
+  async function loadProjects() {
+    if (!supabaseClient) { renderGrid(); return; }
+    const { data, error } = await supabaseClient
+      .from('projects')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) { showToast('Error loading projects: ' + error.message); return; }
+    projects = data || [];
+    renderGrid();
+  }
+
+  function statusClass(status) {
+    return 'status-' + status.replace(' ', '_');
+  }
+
+  function renderGrid() {
+    const search = document.getElementById('searchInput').value.toLowerCase();
+    const statusFilter = document.getElementById('statusFilter').value;
+    const grid = document.getElementById('grid');
+    const empty = document.getElementById('emptyState');
+
+    const filtered = projects.filter(p => {
+      const matchesSearch = !search ||
+        (p.project_number || '').toLowerCase().includes(search) ||
+        (p.project_name || '').toLowerCase().includes(search) ||
+        (p.customer || '').toLowerCase().includes(search);
+      const matchesStatus = !statusFilter || p.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+
+    grid.innerHTML = '';
+    if (filtered.length === 0) {
+      empty.style.display = 'block';
+      grid.style.display = 'none';
+      return;
+    }
+    empty.style.display = 'none';
+    grid.style.display = 'grid';
+
+    filtered.forEach(p => {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = `
+        <div class="card-top">
+          <div>
+            <div class="proj-num">${p.project_number || '—'}</div>
+            <div class="proj-name">${p.project_name || 'Untitled Project'}</div>
+          </div>
+          <span class="status-pill ${statusClass(p.status || 'Active')}">${p.status || 'Active'}</span>
+        </div>
+        <div class="card-row"><span>Customer</span><b>${p.customer || '—'}</b></div>
+        <div class="card-row"><span>PM</span><b>${p.project_manager || '—'}</b></div>
+        <div class="card-row"><span>Start</span><b>${p.start_date || '—'}</b></div>
+        <div class="card-row"><span>Last BOM Import</span><b>${p.last_bom_import ? new Date(p.last_bom_import).toLocaleDateString() : 'None yet'}</b></div>
+        <div class="card-actions">
+          <button onclick="editProject('${p.id}')">Edit</button>
+          <button onclick="archiveProject('${p.id}')">${p.status === 'Archived' ? 'Unarchive' : 'Archive'}</button>
+        </div>
+      `;
+      grid.appendChild(card);
+    });
+  }
+
+  function openModal(project) {
+    document.getElementById('modalTitle').textContent = project ? 'Edit Project' : 'New Project';
+    document.getElementById('projectId').value = project ? project.id : '';
+    document.getElementById('f_project_number').value = project ? project.project_number || '' : '';
+    document.getElementById('f_project_name').value = project ? project.project_name || '' : '';
+    document.getElementById('f_customer').value = project ? project.customer || '' : '';
+    document.getElementById('f_project_manager').value = project ? project.project_manager || '' : '';
+    document.getElementById('f_status').value = project ? project.status || 'Active' : 'Active';
+    document.getElementById('f_start_date').value = project ? project.start_date || '' : '';
+    document.getElementById('f_completion_date').value = project ? project.completion_date || '' : '';
+    document.getElementById('overlay').classList.add('show');
+  }
+
+  function closeModal() {
+    document.getElementById('overlay').classList.remove('show');
+  }
+
+  window.editProject = function(id) {
+    const p = projects.find(x => x.id === id);
+    if (p) openModal(p);
+  };
+
+  window.archiveProject = async function(id) {
+    const p = projects.find(x => x.id === id);
+    if (!p) return;
+    const newStatus = p.status === 'Archived' ? 'Active' : 'Archived';
+    if (!supabaseClient) { showToast('Connect Supabase first — see banner above.'); return; }
+    const { error } = await supabaseClient.from('projects').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) { showToast('Error: ' + error.message); return; }
+    showToast(newStatus === 'Archived' ? 'Project archived' : 'Project restored');
+    loadProjects();
+  };
+
+  document.getElementById('newProjectBtn').onclick = () => openModal(null);
+  document.getElementById('cancelBtn').onclick = closeModal;
+  document.getElementById('overlay').onclick = (e) => { if (e.target.id === 'overlay') closeModal(); };
+
+  document.getElementById('saveBtn').onclick = async function() {
+    if (!supabaseClient) { showToast('Connect Supabase first — see banner above.'); return; }
+
+    const project_number = document.getElementById('f_project_number').value.trim();
+    const project_name = document.getElementById('f_project_name').value.trim();
+
+    if (!project_number || !project_name) {
+      showToast('Project Number and Project Name are required.');
+      return;
+    }
+
+    const payload = {
+      project_number,
+      project_name,
+      customer: document.getElementById('f_customer').value.trim(),
+      project_manager: document.getElementById('f_project_manager').value,
+      status: document.getElementById('f_status').value,
+      start_date: document.getElementById('f_start_date').value || null,
+      completion_date: document.getElementById('f_completion_date').value || null,
+      updated_at: new Date().toISOString()
+    };
+
+    const id = document.getElementById('projectId').value;
+    let error;
+    if (id) {
+      ({ error } = await supabaseClient.from('projects').update(payload).eq('id', id));
+    } else {
+      ({ error } = await supabaseClient.from('projects').insert(payload));
+    }
+
+    if (error) { showToast('Error saving: ' + error.message); return; }
+    showToast(id ? 'Project updated' : 'Project created');
+    closeModal();
+    loadProjects();
+  };
+
+  document.getElementById('searchInput').addEventListener('input', renderGrid);
+  document.getElementById('statusFilter').addEventListener('change', renderGrid);
+
+  loadProjects();
+</script>
+
+</body>
+</html>

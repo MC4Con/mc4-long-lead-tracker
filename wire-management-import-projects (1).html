@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SupplySite™ — Import Projects</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --mc4-orange: #e8580a; --mc4-orange-light: #fdeee4; --ink: #1a1a1a; --ink-soft: #5c5c5c;
+    --line: #e5e2dd; --bg: #faf9f7; --card: #ffffff; --green: #2f7d4f; --red: #c23b3b; --amber: #b8860b; --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+  #configBanner { background: #fff3cd; border-bottom: 1px solid #e0c46c; padding: 12px 24px; font-size: 14px; color: #6b5410; display: none; }
+  header { background: var(--card); border-bottom: 1px solid var(--line); padding: 18px 28px; display: flex; align-items: center; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-mark { width: 34px; height: 34px; background: var(--mc4-orange); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 15px; }
+  .brand-text { font-weight: 700; font-size: 17px; letter-spacing: -0.2px; }
+  .brand-text span { color: var(--mc4-orange); }
+  nav { display: flex; gap: 4px; margin-left: 28px; }
+  nav a { padding: 7px 14px; border-radius: 7px; font-size: 14px; color: var(--ink-soft); text-decoration: none; font-weight: 500; }
+  nav a.active { background: var(--mc4-orange-light); color: var(--mc4-orange); }
+  main { max-width: 980px; margin: 0 auto; padding: 28px; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; margin-bottom: 20px; }
+  .panel h2 { margin: 0 0 4px; font-size: 16px; }
+  .panel p.sub { margin: 0 0 18px; font-size: 13.5px; color: var(--ink-soft); }
+  .dropzone { border: 2px dashed var(--line); border-radius: 10px; padding: 36px 20px; text-align: center; cursor: pointer; background: var(--bg); }
+  .dropzone.drag { border-color: var(--mc4-orange); background: var(--mc4-orange-light); }
+  .dropzone p { margin: 6px 0 0; color: var(--ink-soft); font-size: 13.5px; }
+  .dropzone .icon { font-size: 26px; }
+  .dropzone input { display: none; }
+  .file-chip { display: none; align-items: center; gap: 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin-top: 12px; }
+  .file-chip.show { display: flex; }
+  .file-chip button { margin-left: auto; background: none; border: none; color: var(--ink-soft); cursor: pointer; text-decoration: underline; }
+
+  .map-row { display: flex; align-items: center; gap: 14px; padding: 10px 0; border-bottom: 1px solid #f2f0ec; }
+  .map-row:last-child { border-bottom: none; }
+  .map-field { width: 200px; font-size: 13.5px; font-weight: 600; }
+  .map-field .req { color: var(--mc4-orange); font-size: 11px; margin-left: 4px; }
+  .map-row select { flex: 1; padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px; font-size: 13.5px; }
+
+  .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 18px 0; }
+  .stat { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 14px; text-align: center; }
+  .stat .num { font-size: 22px; font-weight: 700; }
+  .stat .label { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+  .stat.new .num { color: var(--green); }
+  .stat.update .num { color: var(--amber); }
+  .stat.skip .num { color: var(--red); }
+
+  .preview-table-wrap { max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; margin-top: 14px; }
+  table.preview { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.preview th { position: sticky; top: 0; background: var(--bg); text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); font-weight: 600; color: var(--ink-soft); }
+  table.preview td { padding: 7px 10px; border-bottom: 1px solid #f2f0ec; }
+  tr.row-update td { background: #fdf1de; }
+  tr.row-skip td { background: #fbe4e4; color: var(--ink-soft); }
+
+  .btn-primary { background: var(--mc4-orange); color: white; border: none; padding: 11px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .btn-primary:hover { background: #cf4d08; }
+  .btn-primary:disabled { background: #e5c3ac; cursor: not-allowed; }
+  .btn-secondary { background: var(--card); border: 1px solid var(--line); color: var(--ink-soft); padding: 11px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .actions { display: flex; gap: 10px; margin-top: 6px; }
+  .success-panel { text-align: center; padding: 30px 20px; }
+  .success-panel .check { font-size: 40px; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--ink); color: white; padding: 11px 20px; border-radius: 8px; font-size: 13.5px; opacity: 0; pointer-events: none; transition: opacity 0.2s ease; z-index: 100; }
+  .toast.show { opacity: 1; }
+  .hidden { display: none; }
+  .note { font-size: 12.5px; color: var(--ink-soft); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+
+<div id="configBanner">⚠️ Not connected to Supabase yet.</div>
+
+<header>
+  <div class="brand">
+    <div class="brand-mark">MC4</div>
+    <div class="brand-text">Supply<span>Site™</span></div>
+  </div>
+  <nav>
+    <a href="wire-management-projects.html">Projects</a>
+    <a href="wire-management-bom-import.html">BOM Import</a>
+    <a href="wire-management-wire-review.html">Wire Review</a>
+    <a href="#" class="active">Import Job List</a>
+  </nav>
+</header>
+
+<main>
+
+  <!-- STEP 1: Upload -->
+  <div class="panel" id="uploadPanel">
+    <h2>Import Your Job List</h2>
+    <p class="sub">Upload your existing job database (Excel or CSV) to bring your projects into SupplySite™ instead of typing them in one by one.</p>
+    <div class="dropzone" id="dropzone">
+      <div class="icon">📋</div>
+      <p><b>Click to choose a file</b> or drag it here</p>
+      <p>.xlsx or .csv</p>
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+    </div>
+    <div class="file-chip" id="fileChip">
+      <span id="fileChipName"></span>
+      <button id="fileChipRemove">Remove</button>
+    </div>
+    <div class="actions" style="margin-top:16px;">
+      <button class="btn-primary" id="loadBtn" disabled>Load File</button>
+    </div>
+  </div>
+
+  <!-- STEP 2: Column mapping -->
+  <div class="panel hidden" id="mapPanel">
+    <h2>Match Your Columns</h2>
+    <p class="sub">I did my best to guess — double check each one and fix any that are wrong. Choose "Don't import this field" for anything you don't have.</p>
+    <div id="mapRows"></div>
+    <div class="actions" style="margin-top:16px;">
+      <button class="btn-secondary" id="mapBackBtn">Back</button>
+      <button class="btn-primary" id="mapPreviewBtn">Preview Import</button>
+    </div>
+  </div>
+
+  <!-- STEP 3: Preview -->
+  <div class="panel hidden" id="previewPanel">
+    <h2>Review Before Importing</h2>
+    <p class="sub">Projects are matched to existing ones by Project Number. New ones will be created, matches will be updated.</p>
+    <div class="summary-grid">
+      <div class="stat new"><div class="num" id="statNew">0</div><div class="label">New Projects</div></div>
+      <div class="stat update"><div class="num" id="statUpdate">0</div><div class="label">Will Update Existing</div></div>
+      <div class="stat skip"><div class="num" id="statSkip">0</div><div class="label">Skipped (no Project Number)</div></div>
+    </div>
+    <div class="preview-table-wrap"><table class="preview" id="previewTable"></table></div>
+    <div class="actions" style="margin-top:16px;">
+      <button class="btn-secondary" id="previewBackBtn">Back</button>
+      <button class="btn-primary" id="confirmBtn">Confirm Import</button>
+    </div>
+  </div>
+
+  <!-- STEP 4: Success -->
+  <div class="panel hidden success-panel" id="successPanel">
+    <div class="check">✅</div>
+    <h2 id="successHeadline">Import Complete</h2>
+    <p class="sub" id="successSub"></p>
+    <div class="actions" style="justify-content:center;">
+      <a href="wire-management-projects.html"><button class="btn-primary">Go to Projects</button></a>
+    </div>
+  </div>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const SUPABASE_URL = "https://rqjpwwnfcqezmlnzdofm.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable__Kc0C8doDwh7KqxBgg_8aQ_7PXXsFi0";
+
+  const isConfigured = !SUPABASE_URL.includes("PASTE_") && !SUPABASE_ANON_KEY.includes("PASTE_");
+  if (!isConfigured) document.getElementById('configBanner').style.display = 'block';
+  const supabaseClient = isConfigured ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2600);
+  }
+
+  const TARGET_FIELDS = [
+    { key: 'project_number', label: 'Project Number', required: true, aliases: ['project number','job number','job #','project #','job no','number'] },
+    { key: 'project_name', label: 'Project Name', required: true, aliases: ['project name','job name','name','project'] },
+    { key: 'customer', label: 'Customer', required: false, aliases: ['customer','client','owner'] },
+    { key: 'project_manager', label: 'Project Manager', required: false, aliases: ['project manager','pm','manager'] },
+    { key: 'status', label: 'Status', required: false, aliases: ['status','job status','phase'] },
+    { key: 'start_date', label: 'Start Date', required: false, aliases: ['start date','start','began'] },
+    { key: 'completion_date', label: 'Completion Date', required: false, aliases: ['completion date','end date','finish date','completed'] }
+  ];
+
+  const STATUS_ALLOWED = ['Active', 'Archived', 'On Hold', 'Complete'];
+
+  let currentFile = null;
+  let sheetHeaders = [];
+  let sheetRows = [];
+  let mappedRows = [];
+  let existingProjectNumbers = new Map(); // project_number -> id
+
+  // ---------- File handling ----------
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  const fileChip = document.getElementById('fileChip');
+
+  dropzone.addEventListener('click', () => fileInput.click());
+  dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+  dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('drag');
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', (e) => { if (e.target.files.length) handleFile(e.target.files[0]); });
+  document.getElementById('fileChipRemove').addEventListener('click', () => {
+    currentFile = null; fileInput.value = ''; fileChip.classList.remove('show');
+    dropzone.style.display = 'block'; document.getElementById('loadBtn').disabled = true;
+  });
+
+  function handleFile(file) {
+    currentFile = file;
+    document.getElementById('fileChipName').textContent = file.name;
+    fileChip.classList.add('show');
+    dropzone.style.display = 'none';
+    document.getElementById('loadBtn').disabled = false;
+  }
+
+  document.getElementById('loadBtn').addEventListener('click', () => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(e.target.result, { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+        sheetHeaders = rows[0] || [];
+        sheetRows = rows.slice(1).filter(r => r.some(c => c !== '' && c !== null && c !== undefined));
+        if (sheetHeaders.length === 0 || sheetRows.length === 0) {
+          showToast('No data found in that file.');
+          return;
+        }
+        renderMapping();
+      } catch (err) {
+        showToast('Could not read file: ' + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(currentFile);
+  });
+
+  function guessColumn(aliases) {
+    const normalized = sheetHeaders.map(h => (h || '').toString().trim().toLowerCase());
+    for (const alias of aliases) {
+      const idx = normalized.indexOf(alias);
+      if (idx !== -1) return idx;
+    }
+    return -1;
+  }
+
+  function renderMapping() {
+    document.getElementById('uploadPanel').classList.add('hidden');
+    document.getElementById('mapPanel').classList.remove('hidden');
+
+    const wrap = document.getElementById('mapRows');
+    wrap.innerHTML = TARGET_FIELDS.map(f => {
+      const guess = guessColumn(f.aliases);
+      const options = ['<option value="-1">Don\'t import this field</option>']
+        .concat(sheetHeaders.map((h, i) => `<option value="${i}" ${i === guess ? 'selected' : ''}>${h}</option>`));
+      return `
+        <div class="map-row">
+          <div class="map-field">${f.label}${f.required ? '<span class="req">required</span>' : ''}</div>
+          <select data-field="${f.key}">${options.join('')}</select>
+        </div>
+      `;
+    }).join('');
+  }
+
+  document.getElementById('mapBackBtn').addEventListener('click', () => {
+    document.getElementById('mapPanel').classList.add('hidden');
+    document.getElementById('uploadPanel').classList.remove('hidden');
+  });
+
+  // ---------- Build mapped rows + check against existing ----------
+  document.getElementById('mapPreviewBtn').addEventListener('click', async () => {
+    const selects = document.querySelectorAll('#mapRows select');
+    const colMap = {};
+    selects.forEach(s => colMap[s.dataset.field] = parseInt(s.value, 10));
+
+    if (colMap.project_number === -1 || colMap.project_name === -1) {
+      showToast('Project Number and Project Name must be mapped to a column.');
+      return;
+    }
+
+    // Load existing projects to detect matches
+    if (supabaseClient) {
+      const { data } = await supabaseClient.from('projects').select('id, project_number');
+      existingProjectNumbers = new Map((data || []).map(p => [p.project_number.trim().toLowerCase(), p.id]));
+    }
+
+    mappedRows = sheetRows.map(row => {
+      const project_number = colMap.project_number !== -1 ? (row[colMap.project_number] ?? '').toString().trim() : '';
+      const project_name = colMap.project_name !== -1 ? (row[colMap.project_name] ?? '').toString().trim() : '';
+      const customer = colMap.customer !== -1 ? (row[colMap.customer] ?? '').toString().trim() : '';
+      const project_manager = colMap.project_manager !== -1 ? (row[colMap.project_manager] ?? '').toString().trim() : '';
+      let status = colMap.status !== -1 ? (row[colMap.status] ?? '').toString().trim() : '';
+      if (status && !STATUS_ALLOWED.some(s => s.toLowerCase() === status.toLowerCase())) status = 'Active';
+      else if (status) status = STATUS_ALLOWED.find(s => s.toLowerCase() === status.toLowerCase());
+      else status = 'Active';
+
+      const start_date = colMap.start_date !== -1 ? excelDateToISO(row[colMap.start_date]) : null;
+      const completion_date = colMap.completion_date !== -1 ? excelDateToISO(row[colMap.completion_date]) : null;
+
+      const skip = !project_number || !project_name;
+      const existingId = project_number ? existingProjectNumbers.get(project_number.toLowerCase()) : null;
+
+      return {
+        project_number, project_name, customer, project_manager, status,
+        start_date, completion_date,
+        skip,
+        action: skip ? 'skip' : (existingId ? 'update' : 'new'),
+        existingId: existingId || null
+      };
+    });
+
+    renderPreview();
+  });
+
+  function excelDateToISO(val) {
+    if (!val) return null;
+    if (typeof val === 'number') {
+      const d = XLSX.SSF.parse_date_code(val);
+      if (!d) return null;
+      return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+    }
+    const parsed = new Date(val);
+    if (isNaN(parsed.getTime())) return null;
+    return parsed.toISOString().split('T')[0];
+  }
+
+  function renderPreview() {
+    document.getElementById('mapPanel').classList.add('hidden');
+    document.getElementById('previewPanel').classList.remove('hidden');
+
+    const newCount = mappedRows.filter(r => r.action === 'new').length;
+    const updateCount = mappedRows.filter(r => r.action === 'update').length;
+    const skipCount = mappedRows.filter(r => r.action === 'skip').length;
+
+    document.getElementById('statNew').textContent = newCount;
+    document.getElementById('statUpdate').textContent = updateCount;
+    document.getElementById('statSkip').textContent = skipCount;
+
+    const table = document.getElementById('previewTable');
+    const rowsHtml = mappedRows.slice(0, 150).map(r => `
+      <tr class="${r.action === 'update' ? 'row-update' : r.action === 'skip' ? 'row-skip' : ''}">
+        <td>${r.action === 'new' ? 'New' : r.action === 'update' ? 'Update' : 'Skip'}</td>
+        <td>${r.project_number}</td>
+        <td>${r.project_name}</td>
+        <td>${r.customer}</td>
+        <td>${r.project_manager}</td>
+        <td>${r.status}</td>
+      </tr>
+    `).join('');
+    table.innerHTML = `
+      <thead><tr><th>Action</th><th>Project #</th><th>Name</th><th>Customer</th><th>PM</th><th>Status</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    `;
+
+    document.getElementById('confirmBtn').disabled = (newCount + updateCount) === 0;
+  }
+
+  document.getElementById('previewBackBtn').addEventListener('click', () => {
+    document.getElementById('previewPanel').classList.add('hidden');
+    document.getElementById('mapPanel').classList.remove('hidden');
+  });
+
+  document.getElementById('confirmBtn').addEventListener('click', async () => {
+    if (!supabaseClient) { showToast('Connect Supabase first.'); return; }
+    const btn = document.getElementById('confirmBtn');
+    btn.disabled = true;
+    btn.textContent = 'Importing…';
+
+    const toInsert = [];
+    const toUpdate = [];
+
+    mappedRows.forEach(r => {
+      if (r.action === 'skip') return;
+      const payload = {
+        project_number: r.project_number,
+        project_name: r.project_name,
+        customer: r.customer || null,
+        project_manager: r.project_manager || null,
+        status: r.status,
+        start_date: r.start_date,
+        completion_date: r.completion_date
+      };
+      if (r.action === 'new') toInsert.push(payload);
+      else toUpdate.push({ id: r.existingId, ...payload });
+    });
+
+    try {
+      for (let i = 0; i < toInsert.length; i += 500) {
+        const { error } = await supabaseClient.from('projects').insert(toInsert.slice(i, i + 500));
+        if (error) throw error;
+      }
+      for (const row of toUpdate) {
+        const { id, ...payload } = row;
+        const { error } = await supabaseClient.from('projects').update(payload).eq('id', id);
+        if (error) throw error;
+      }
+
+      document.getElementById('previewPanel').classList.add('hidden');
+      document.getElementById('successPanel').classList.remove('hidden');
+      document.getElementById('successHeadline').textContent = `${toInsert.length + toUpdate.length} projects imported`;
+      document.getElementById('successSub').textContent = `${toInsert.length} created, ${toUpdate.length} updated.`;
+    } catch (err) {
+      showToast('Import failed: ' + err.message);
+      btn.disabled = false;
+      btn.textContent = 'Confirm Import';
+    }
+  });
+</script>
+
+</body>
+</html>
