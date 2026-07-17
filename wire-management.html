@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SupplySite™ — Wire Management</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --mc4-orange: #e8580a; --mc4-orange-light: #fdeee4; --ink: #1a1a1a; --ink-soft: #5c5c5c;
+    --line: #e5e2dd; --bg: #faf9f7; --card: #ffffff; --green: #2f7d4f; --red: #c23b3b; --amber: #b8860b; --grey: #8a8a8a; --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+  #configBanner { background: #fff3cd; border-bottom: 1px solid #e0c46c; padding: 12px 24px; font-size: 14px; color: #6b5410; display: none; }
+  header { background: var(--card); border-bottom: 1px solid var(--line); padding: 18px 28px; display: flex; align-items: center; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-mark { width: 34px; height: 34px; background: var(--mc4-orange); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 15px; }
+  .brand-text { font-weight: 700; font-size: 17px; letter-spacing: -0.2px; }
+  .brand-text span { color: var(--mc4-orange); }
+  main { max-width: 1180px; margin: 0 auto; padding: 28px; }
+  .hidden { display: none !important; }
+
+  /* ---------- Job list view ---------- */
+  .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 20px; }
+  .search-wrap { position: relative; flex: 1; max-width: 380px; }
+  .search-wrap input { width: 100%; padding: 9px 14px 9px 34px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--card); }
+  .search-wrap input:focus { outline: none; border-color: var(--mc4-orange); }
+  .search-icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); opacity: 0.4; }
+  select#statusFilter, select#pmFilter { padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); font-size: 14px; color: var(--ink); }
+  .btn-primary { background: var(--mc4-orange); color: white; border: none; padding: 10px 18px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .btn-primary:hover { background: #cf4d08; }
+  .btn-primary:disabled { background: #e5c3ac; cursor: not-allowed; }
+  .btn-secondary { background: var(--card); border: 1px solid var(--line); color: var(--ink-soft); padding: 10px 18px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; cursor: pointer; transition: box-shadow 0.15s ease, border-color 0.15s ease; }
+  .job-list { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .job-row { display: flex; align-items: center; gap: 20px; padding: 14px 18px; border-bottom: 1px solid #f2f0ec; cursor: pointer; transition: background 0.12s ease; }
+  .job-row:last-child { border-bottom: none; }
+  .job-row:hover { background: var(--mc4-orange-light); }
+  .job-row .col-num { width: 90px; flex-shrink: 0; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); }
+  .job-row .col-name { flex: 1.4; min-width: 0; }
+  .job-row .col-name .proj-name { font-size: 14.5px; font-weight: 700; }
+  .job-row .col-customer { flex: 1; min-width: 0; font-size: 13px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .job-row .col-pm { width: 130px; flex-shrink: 0; font-size: 13px; color: var(--ink-soft); }
+  .job-row .col-bom { width: 130px; flex-shrink: 0; font-size: 12.5px; color: var(--ink-soft); text-align: right; }
+  .job-row .col-status { width: 90px; flex-shrink: 0; text-align: right; }
+  .job-list-header { display: flex; align-items: center; gap: 20px; padding: 10px 18px; border-bottom: 1px solid var(--line); font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; color: var(--ink-soft); background: var(--bg); }
+  .job-list-header .col-num { width: 90px; flex-shrink: 0; }
+  .job-list-header .col-name { flex: 1.4; }
+  .job-list-header .col-customer { flex: 1; }
+  .job-list-header .col-pm { width: 130px; flex-shrink: 0; }
+  .job-list-header .col-bom { width: 130px; flex-shrink: 0; text-align: right; }
+  .job-list-header .col-status { width: 90px; flex-shrink: 0; text-align: right; }
+  .card:hover { box-shadow: 0 2px 10px rgba(0,0,0,0.06); border-color: var(--mc4-orange); }
+  .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+  .proj-num { font-size: 12px; color: var(--ink-soft); font-weight: 600; letter-spacing: 0.3px; }
+  .proj-name { font-size: 16px; font-weight: 700; margin-top: 2px; }
+  .status-pill { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap; }
+  .status-Active { background: #e6f4eb; color: var(--green); }
+  .status-Archived { background: #f0f0f0; color: var(--grey); }
+  .status-On_Hold { background: #fdf1de; color: var(--amber); }
+  .status-Complete { background: #e7edfb; color: #2c5cb8; }
+  .card-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--ink-soft); padding: 5px 0; border-top: 1px solid #f2f0ec; }
+  .card-row:first-of-type { border-top: none; padding-top: 0; }
+  .card-row b { color: var(--ink); font-weight: 500; }
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--ink-soft); }
+
+  /* ---------- Job detail view ---------- */
+  .back-link { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-soft); text-decoration: none; font-size: 13.5px; font-weight: 600; margin-bottom: 16px; cursor: pointer; }
+  .back-link:hover { color: var(--mc4-orange); }
+  .detail-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 22px; }
+  .detail-header .proj-num { font-size: 13px; }
+  .detail-header .proj-name { font-size: 22px; margin-top: 3px; }
+  .detail-meta { display: flex; gap: 18px; margin-top: 8px; font-size: 13px; color: var(--ink-soft); }
+
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 22px; }
+  .tab-btn { padding: 10px 16px; font-size: 14px; font-weight: 600; color: var(--ink-soft); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; }
+  .tab-btn.active { color: var(--mc4-orange); border-bottom-color: var(--mc4-orange); }
+
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; margin-bottom: 20px; }
+  .panel h2 { margin: 0 0 4px; font-size: 16px; }
+  .panel p.sub { margin: 0 0 18px; font-size: 13.5px; color: var(--ink-soft); }
+
+  .dropzone { border: 2px dashed var(--line); border-radius: 10px; padding: 36px 20px; text-align: center; cursor: pointer; background: var(--bg); }
+  .dropzone.drag { border-color: var(--mc4-orange); background: var(--mc4-orange-light); }
+  .dropzone p { margin: 6px 0 0; color: var(--ink-soft); font-size: 13.5px; }
+  .dropzone .icon { font-size: 26px; }
+  .dropzone input { display: none; }
+  .file-chip { display: none; align-items: center; gap: 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin-top: 12px; }
+  .file-chip.show { display: flex; }
+  .file-chip button { margin-left: auto; background: none; border: none; color: var(--ink-soft); cursor: pointer; text-decoration: underline; }
+
+  .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 18px 0; }
+  .stat { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 14px; text-align: center; }
+  .stat .num { font-size: 22px; font-weight: 700; }
+  .stat .label { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+  .stat.error .num { color: var(--red); }
+  .stat.warn .num { color: var(--amber); }
+
+  .issue-list { max-height: 200px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 14px; }
+  .issue-row { padding: 10px 14px; font-size: 13px; border-bottom: 1px solid #f2f0ec; display: flex; gap: 10px; }
+  .issue-row:last-child { border-bottom: none; }
+  .issue-row .badge { flex-shrink: 0; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px; text-transform: uppercase; height: fit-content; }
+  .badge-error { background: #fbe4e4; color: var(--red); }
+  .badge-warn { background: #fdf1de; color: var(--amber); }
+
+  .select-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .select-bar .count { font-size: 13.5px; color: var(--ink-soft); }
+  .select-bar .btns { display: flex; gap: 8px; }
+  .select-bar button { padding: 6px 12px; font-size: 12.5px; border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--ink-soft); cursor: pointer; }
+
+  .preview-table-wrap { max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+  table.preview { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.preview th { position: sticky; top: 0; background: var(--bg); text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); font-weight: 600; color: var(--ink-soft); }
+  table.preview td { padding: 7px 10px; border-bottom: 1px solid #f2f0ec; }
+  table.preview tr.dup td { background: #fdf1de; }
+
+  .success-panel { text-align: center; padding: 30px 20px; }
+  .success-panel .check { font-size: 40px; }
+  .success-panel h2 { margin: 10px 0 4px; }
+
+  /* Wire summary tab */
+  .wire-totals-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .wire-totals-header .count { font-size: 13px; color: var(--ink-soft); }
+  .wire-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f2f0ec; }
+  .wire-row:last-child { border-bottom: none; }
+  .wire-desc { font-size: 14.5px; font-weight: 600; }
+  .wire-meta { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+  .wire-qty { font-size: 16px; font-weight: 700; color: var(--mc4-orange); white-space: nowrap; }
+
+  .browse-search { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 7px; font-size: 13.5px; margin-bottom: 10px; }
+  .item-row { display: flex; align-items: center; gap: 14px; padding: 10px 4px; border-bottom: 1px solid #f2f0ec; }
+  .item-row:last-child { border-bottom: none; }
+  .item-row input[type=checkbox] { width: 18px; height: 18px; flex-shrink: 0; cursor: pointer; }
+  .item-main { flex: 1; }
+  .item-desc { font-size: 13.5px; font-weight: 600; }
+  .item-meta { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+  .item-scroll { max-height: 360px; overflow-y: auto; }
+
+  /* ---------- Modal ---------- */
+  .overlay { display: none; position: fixed; inset: 0; background: rgba(20,20,20,0.4); align-items: center; justify-content: center; z-index: 50; }
+  .overlay.show { display: flex; }
+  .modal { background: var(--card); border-radius: 12px; padding: 26px; width: 480px; max-width: 92vw; max-height: 88vh; overflow-y: auto; }
+  .modal h2 { margin: 0 0 18px; font-size: 18px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); margin-bottom: 5px; }
+  .field input, .field select { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 7px; font-size: 14px; }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--mc4-orange); }
+  .field-row { display: flex; gap: 12px; }
+  .field-row .field { flex: 1; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+  .modal-actions button { flex: 1; padding: 10px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .btn-cancel { background: var(--bg); border: 1px solid var(--line); color: var(--ink-soft); }
+  .btn-save { background: var(--mc4-orange); border: none; color: white; }
+
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--ink); color: white; padding: 11px 20px; border-radius: 8px; font-size: 13.5px; opacity: 0; pointer-events: none; transition: opacity 0.2s ease; z-index: 100; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div id="configBanner">⚠️ Not connected to Supabase yet. Set SUPABASE_URL and SUPABASE_ANON_KEY near the top of the script.</div>
+
+<header>
+  <div class="brand">
+    <div class="brand-mark">MC4</div>
+    <div class="brand-text">Supply<span>Site™</span> — Wire Management</div>
+  </div>
+</header>
+
+<main>
+
+  <!-- ================= JOB LIST VIEW ================= -->
+  <div id="jobListView">
+    <div class="toolbar">
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input id="searchInput" type="text" placeholder="Search project, number, or customer...">
+      </div>
+      <select id="statusFilter">
+        <option value="">All statuses</option>
+        <option value="Active">Active</option>
+        <option value="On Hold">On Hold</option>
+        <option value="Complete">Complete</option>
+        <option value="Archived">Archived</option>
+      </select>
+      <select id="pmFilter">
+        <option value="">All PMs</option>
+      </select>
+      <button class="btn-secondary" id="wireReportBtn">📊 Wire Report</button>
+      <button class="btn-primary" id="newProjectBtn">+ New Job</button>
+    </div>
+    <div class="job-list-header">
+      <div class="col-num">Job #</div>
+      <div class="col-name">Name</div>
+      <div class="col-customer">Customer</div>
+      <div class="col-pm">PM</div>
+      <div class="col-bom">Last BOM Import</div>
+      <div class="col-status">Status</div>
+    </div>
+    <div id="grid" class="job-list"></div>
+    <div id="emptyState" class="empty-state hidden">
+      <div class="brand-mark" style="width:44px;height:44px;font-size:18px;margin:0 auto 16px;">MC4</div>
+      <p><b>No jobs yet.</b><br>Create your first job to start importing BOMs.</p>
+    </div>
+  </div>
+
+  <!-- ================= JOB DETAIL VIEW ================= -->
+  <div id="jobDetailView" class="hidden">
+    <a class="back-link" id="backToListBtn">← All Jobs</a>
+
+    <div class="detail-header">
+      <div>
+        <div class="proj-num" id="detailProjNum"></div>
+        <div class="proj-name" id="detailProjName"></div>
+        <div class="detail-meta">
+          <span id="detailCustomer"></span>
+          <span id="detailPM"></span>
+          <span id="detailStatus"></span>
+        </div>
+      </div>
+      <button class="btn-secondary" id="editProjectBtn">Edit Job Info</button>
+      <button class="btn-secondary" id="deleteProjectBtn" style="margin-left:8px; color:var(--red); border-color:#f0c9c9;">Delete Job</button>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" id="tabBomImportBtn">BOM Import</button>
+      <button class="tab-btn" id="tabWireSummaryBtn">Wire Summary</button>
+    </div>
+
+    <!-- ---- BOM IMPORT TAB ---- -->
+    <div id="tabBomImport">
+      <div class="panel" id="uploadPanel">
+        <h2>Import a BOM</h2>
+        <p class="sub">Upload the BOM export for this job (KOJO format supported). Nothing is added until you review and confirm.</p>
+        <div class="dropzone" id="dropzone">
+          <div class="icon">📄</div>
+          <p><b>Click to choose a file</b> or drag it here</p>
+          <p>.xlsx or .csv</p>
+          <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+        </div>
+        <div class="file-chip" id="fileChip">
+          <span id="fileChipName"></span>
+          <button id="fileChipRemove">Remove</button>
+        </div>
+        <div class="modal-actions" style="margin-top:16px; max-width:220px;">
+          <button class="btn-primary" id="parseBtn" disabled>Review Import</button>
+        </div>
+      </div>
+
+      <div class="panel hidden" id="reviewPanel">
+        <h2>Review Before Importing</h2>
+        <p class="sub" id="reviewSub"></p>
+        <div class="summary-grid">
+          <div class="stat"><div class="num" id="statTotal">0</div><div class="label">Rows Found</div></div>
+          <div class="stat error"><div class="num" id="statErrors">0</div><div class="label">Errors (blocking)</div></div>
+          <div class="stat warn"><div class="num" id="statWarnings">0</div><div class="label">Duplicates Flagged</div></div>
+        </div>
+        <div id="issuesWrap" class="hidden"><div class="issue-list" id="issueList"></div></div>
+
+        <div class="select-bar">
+          <div class="count"><span id="selectedCount">0</span> of <span id="selectableCount">0</span> selected to import</div>
+          <div class="btns">
+            <button id="selectAllBtn">Select All</button>
+            <button id="selectNoneBtn">Select None</button>
+          </div>
+        </div>
+        <div class="preview-table-wrap"><table class="preview" id="previewTable"></table></div>
+
+        <div class="modal-actions" style="margin-top:16px; max-width:340px;">
+          <button class="btn-cancel" id="backBtn">Back</button>
+          <button class="btn-save" id="confirmImportBtn">Import Selected</button>
+        </div>
+      </div>
+
+      <div class="panel hidden success-panel" id="successPanel">
+        <div class="check">✅</div>
+        <h2 id="successHeadline">Import Complete</h2>
+        <p class="sub" id="successSub"></p>
+        <div class="modal-actions" style="justify-content:center; max-width:220px; margin:0 auto;">
+          <button class="btn-secondary" id="importAnotherBtn">Import Another BOM</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---- WIRE SUMMARY TAB ---- -->
+    <div id="tabWireSummary" class="hidden">
+      <div class="panel">
+        <div class="wire-totals-header">
+          <h2>Wire Summary</h2>
+          <span class="count" id="wireTypeCount"></span>
+        </div>
+        <p class="sub">Every item you've imported for this job, totaled by description.</p>
+        <div id="wireTotalsList"></div>
+        <div id="wireEmptyNote" class="sub hidden" style="text-align:center; padding:20px 0;">No BOM imported for this job yet — use the BOM Import tab.</div>
+      </div>
+
+      <div class="panel" id="wireItemsPanel">
+        <div class="wire-totals-header">
+          <h2>Imported Items</h2>
+          <button class="btn-secondary" id="deleteBomBtn" style="color:var(--red); border-color:#f0c9c9; font-size:12.5px; padding:7px 14px;">Delete This BOM Import</button>
+        </div>
+        <p class="sub">Wrong item snuck in? Remove it here — it comes right back out of the totals above.</p>
+        <input type="text" class="browse-search" id="wireItemsSearch" placeholder="Search description...">
+        <div class="item-scroll" id="wireItemsList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= COMPANY WIRE REPORT VIEW ================= -->
+  <div id="wireReportView" class="hidden">
+    <a class="back-link" id="backFromReportBtn">← All Jobs</a>
+
+    <div class="panel">
+      <div class="wire-totals-header">
+        <h2>Company Wire Report</h2>
+        <span class="count" id="reportTypeCount"></span>
+      </div>
+      <p class="sub">Click a wire type to see its breakdown by job. Grand total shown on the right.</p>
+      <div style="display:flex; gap:8px; margin-bottom:10px;">
+        <button class="btn-secondary" id="sortByNameBtn" style="font-size:12.5px; padding:7px 14px;">Sort A–Z</button>
+        <button class="btn-secondary" id="sortByTotalBtn" style="font-size:12.5px; padding:7px 14px;">Sort by Total</button>
+      </div>
+      <div id="reportGroups"></div>
+      <div id="reportEmptyNote" class="sub hidden" style="text-align:center; padding:24px 0;">No wire imported anywhere yet.</div>
+    </div>
+
+    <div class="panel">
+      <h2>Standardize Wire Names</h2>
+      <p class="sub">Different BOMs sometimes describe the same wire differently (e.g. "#4 THW Wire" vs "WIRE - #4 THW GREEN"). Give each raw description the same standard name here, and every job using it will report under that one name — including future imports.</p>
+      <input type="text" class="browse-search" id="nameMapSearch" placeholder="Search raw descriptions...">
+      <div class="item-scroll" id="nameMapList" style="max-height:420px;"></div>
+    </div>
+  </div>
+
+</main>
+
+<!-- New/Edit Project Modal -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h2 id="modalTitle">New Job</h2>
+    <input type="hidden" id="projectId">
+    <div class="field"><label>Project Number</label><input id="f_project_number" placeholder="e.g. 24-118"></div>
+    <div class="field"><label>Project Name</label><input id="f_project_name" placeholder="e.g. Blue Diamond Signals"></div>
+    <div class="field"><label>Customer</label><input id="f_customer" placeholder="e.g. City of Las Vegas"></div>
+    <div class="field-row">
+      <div class="field">
+        <label>Project Manager</label>
+        <select id="f_project_manager">
+          <option value="">Select PM</option>
+          <option value="Samantha Brown">Samantha Brown</option>
+          <option value="Allen Kerr">Allen Kerr</option>
+          <option value="Rob Smith">Rob Smith</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Status</label>
+        <select id="f_status">
+          <option value="Active">Active</option>
+          <option value="On Hold">On Hold</option>
+          <option value="Complete">Complete</option>
+          <option value="Archived">Archived</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Start Date</label><input id="f_start_date" type="date"></div>
+      <div class="field"><label>Completion Date</label><input id="f_completion_date" type="date"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="cancelBtn">Cancel</button>
+      <button class="btn-save" id="saveBtn">Save Job</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ====== CONFIG ======
+  const SUPABASE_URL = "https://rqjpwwnfcqezmlnzdofm.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable__Kc0C8doDwh7KqxBgg_8aQ_7PXXsFi0";
+  // =====================
+
+  const isConfigured = !SUPABASE_URL.includes("PASTE_") && !SUPABASE_ANON_KEY.includes("PASTE_");
+  if (!isConfigured) document.getElementById('configBanner').style.display = 'block';
+  const supabaseClient = isConfigured ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2300);
+  }
+
+  // =========================================================
+  // JOB LIST VIEW
+  // =========================================================
+  let projects = [];
+
+  async function loadProjects() {
+    if (!supabaseClient) { renderGrid(); return; }
+    const { data, error } = await supabaseClient.from('projects').select('*');
+    if (error) { showToast('Error loading jobs: ' + error.message); return; }
+    projects = data || [];
+    populatePmFilter();
+    renderGrid();
+  }
+
+  function populatePmFilter() {
+    const sel = document.getElementById('pmFilter');
+    const currentValue = sel.value;
+    const pms = Array.from(new Set(projects.map(p => p.project_manager).filter(Boolean))).sort();
+    sel.innerHTML = '<option value="">All PMs</option>' + pms.map(pm => `<option value="${pm}">${pm}</option>`).join('');
+    if (pms.includes(currentValue)) sel.value = currentValue;
+  }
+
+  function statusClass(status) { return 'status-' + status.replace(' ', '_'); }
+
+  function renderGrid() {
+    const search = document.getElementById('searchInput').value.toLowerCase();
+    const statusFilter = document.getElementById('statusFilter').value;
+    const pmFilter = document.getElementById('pmFilter').value;
+    const grid = document.getElementById('grid');
+    const empty = document.getElementById('emptyState');
+
+    const filtered = projects.filter(p => {
+      const matchesSearch = !search ||
+        (p.project_number || '').toLowerCase().includes(search) ||
+        (p.project_name || '').toLowerCase().includes(search) ||
+        (p.customer || '').toLowerCase().includes(search);
+      const matchesStatus = !statusFilter || p.status === statusFilter;
+      const matchesPM = !pmFilter || p.project_manager === pmFilter;
+      return matchesSearch && matchesStatus && matchesPM;
+    });
+
+    filtered.sort((a, b) => (a.project_number || '').localeCompare(b.project_number || '', undefined, { numeric: true, sensitivity: 'base' }));
+
+    grid.innerHTML = '';
+    if (filtered.length === 0) { empty.classList.remove('hidden'); grid.style.display = 'none'; return; }
+    empty.classList.add('hidden'); grid.style.display = 'block';
+
+    filtered.forEach(p => {
+      const row = document.createElement('div');
+      row.className = 'job-row';
+      row.innerHTML = `
+        <div class="col-num">${p.project_number || '—'}</div>
+        <div class="col-name"><div class="proj-name">${p.project_name || 'Untitled Job'}</div></div>
+        <div class="col-customer">${p.customer || '—'}</div>
+        <div class="col-pm">${p.project_manager || '—'}</div>
+        <div class="col-bom">${p.last_bom_import ? new Date(p.last_bom_import).toLocaleDateString() : 'None yet'}</div>
+        <div class="col-status"><span class="status-pill ${statusClass(p.status || 'Active')}">${p.status || 'Active'}</span></div>
+      `;
+      row.addEventListener('click', () => openJobDetail(p));
+      grid.appendChild(row);
+    });
+  }
+
+  document.getElementById('searchInput').addEventListener('input', renderGrid);
+  document.getElementById('statusFilter').addEventListener('change', renderGrid);
+  document.getElementById('pmFilter').addEventListener('change', renderGrid);
+
+  // ---- New/Edit Project modal ----
+  function openModal(project) {
+    document.getElementById('modalTitle').textContent = project ? 'Edit Job' : 'New Job';
+    document.getElementById('projectId').value = project ? project.id : '';
+    document.getElementById('f_project_number').value = project ? project.project_number || '' : '';
+    document.getElementById('f_project_name').value = project ? project.project_name || '' : '';
+    document.getElementById('f_customer').value = project ? project.customer || '' : '';
+    document.getElementById('f_project_manager').value = project ? project.project_manager || '' : '';
+    document.getElementById('f_status').value = project ? project.status || 'Active' : 'Active';
+    document.getElementById('f_start_date').value = project ? project.start_date || '' : '';
+    document.getElementById('f_completion_date').value = project ? project.completion_date || '' : '';
+    document.getElementById('overlay').classList.add('show');
+  }
+  function closeModal() { document.getElementById('overlay').classList.remove('show'); }
+
+  document.getElementById('newProjectBtn').onclick = () => openModal(null);
+  document.getElementById('editProjectBtn').onclick = () => openModal(currentProject);
+
+  document.getElementById('deleteProjectBtn').onclick = async () => {
+    if (!currentProject) return;
+    const confirmed = confirm(`Delete "${currentProject.project_number} — ${currentProject.project_name}"?\n\nThis also permanently deletes every BOM version and item imported for this job. This cannot be undone.`);
+    if (!confirmed) return;
+
+    const { error } = await supabaseClient.from('projects').delete().eq('id', currentProject.id);
+    if (error) { showToast('Could not delete: ' + error.message); return; }
+
+    showToast('Job deleted.');
+    document.getElementById('jobDetailView').classList.add('hidden');
+    document.getElementById('jobListView').classList.remove('hidden');
+    currentProject = null;
+    loadProjects();
+  };
+  document.getElementById('cancelBtn').onclick = closeModal;
+  document.getElementById('overlay').onclick = (e) => { if (e.target.id === 'overlay') closeModal(); };
+
+  document.getElementById('saveBtn').onclick = async function() {
+    if (!supabaseClient) { showToast('Connect Supabase first.'); return; }
+    const project_number = document.getElementById('f_project_number').value.trim();
+    const project_name = document.getElementById('f_project_name').value.trim();
+    if (!project_number || !project_name) { showToast('Project Number and Name are required.'); return; }
+
+    const payload = {
+      project_number, project_name,
+      customer: document.getElementById('f_customer').value.trim(),
+      project_manager: document.getElementById('f_project_manager').value,
+      status: document.getElementById('f_status').value,
+      start_date: document.getElementById('f_start_date').value || null,
+      completion_date: document.getElementById('f_completion_date').value || null,
+      updated_at: new Date().toISOString()
+    };
+
+    const id = document.getElementById('projectId').value;
+    let error, savedId = id;
+    if (id) {
+      ({ error } = await supabaseClient.from('projects').update(payload).eq('id', id));
+    } else {
+      const { data, error: insertErr } = await supabaseClient.from('projects').insert(payload).select().single();
+      error = insertErr;
+      if (data) savedId = data.id;
+    }
+    if (error) { showToast('Error saving: ' + error.message); return; }
+    showToast(id ? 'Job updated' : 'Job created');
+    closeModal();
+    await loadProjects();
+    if (currentProject && currentProject.id === savedId) {
+      currentProject = projects.find(p => p.id === savedId);
+      renderDetailHeader();
+    }
+  };
+
+  // =========================================================
+  // JOB DETAIL VIEW
+  // =========================================================
+  let currentProject = null;
+  let activeImportId = null;
+  let activeImportVersion = null;
+
+  function openJobDetail(project) {
+    currentProject = project;
+    document.getElementById('jobListView').classList.add('hidden');
+    document.getElementById('jobDetailView').classList.remove('hidden');
+    renderDetailHeader();
+    switchTab('bom');
+    resetImportFlow();
+    loadActiveBomForProject();
+  }
+
+  document.getElementById('backToListBtn').addEventListener('click', () => {
+    document.getElementById('jobDetailView').classList.add('hidden');
+    document.getElementById('jobListView').classList.remove('hidden');
+    currentProject = null;
+    loadProjects();
+  });
+
+  function renderDetailHeader() {
+    document.getElementById('detailProjNum').textContent = currentProject.project_number || '—';
+    document.getElementById('detailProjName').textContent = currentProject.project_name || 'Untitled Job';
+    document.getElementById('detailCustomer').textContent = currentProject.customer ? `Customer: ${currentProject.customer}` : '';
+    document.getElementById('detailPM').textContent = currentProject.project_manager ? `PM: ${currentProject.project_manager}` : '';
+    document.getElementById('detailStatus').textContent = `Status: ${currentProject.status || 'Active'}`;
+  }
+
+  function switchTab(tab) {
+    const bomBtn = document.getElementById('tabBomImportBtn');
+    const wireBtn = document.getElementById('tabWireSummaryBtn');
+    const bomTab = document.getElementById('tabBomImport');
+    const wireTab = document.getElementById('tabWireSummary');
+    if (tab === 'bom') {
+      bomBtn.classList.add('active'); wireBtn.classList.remove('active');
+      bomTab.classList.remove('hidden'); wireTab.classList.add('hidden');
+    } else {
+      wireBtn.classList.add('active'); bomBtn.classList.remove('active');
+      wireTab.classList.remove('hidden'); bomTab.classList.add('hidden');
+      renderWireSummary();
+    }
+  }
+  document.getElementById('tabBomImportBtn').addEventListener('click', () => switchTab('bom'));
+  document.getElementById('tabWireSummaryBtn').addEventListener('click', () => switchTab('wire'));
+
+  async function loadActiveBomForProject() {
+    if (!supabaseClient || !currentProject) return;
+    const { data, error } = await supabaseClient
+      .from('bom_imports')
+      .select('id, version_number, is_active')
+      .eq('project_id', currentProject.id)
+      .order('version_number', { ascending: false })
+      .limit(1);
+
+    if (error) {
+      showToast('Error checking BOM status: ' + error.message);
+      activeImportId = null; activeImportVersion = null;
+      return;
+    }
+
+    if (data && data.length > 0) {
+      activeImportId = data[0].id;
+      activeImportVersion = data[0].version_number;
+    } else {
+      activeImportId = null; activeImportVersion = null;
+    }
+  }
+
+  // ---------------------------------------------------------
+  // BOM IMPORT TAB
+  // ---------------------------------------------------------
+  const HEADER_ALIASES = {
+    item_number: ['item number', 'item #', 'item no', 'itemno', 'item id', 'material number', 'part number', 'item', 'mpn'],
+    description: ['description', 'desc', 'item description', 'material description'],
+    quantity: ['quantity', 'qty', 'estimated quantity'],
+    unit: ['unit', 'uom', 'unit of measure', 'units'],
+    unit_price: ['unit price', 'price', 'unit cost'],
+    extended_price: ['extended price', 'ext price', 'ext. price', 'total price', 'total', 'extended cost']
+  };
+  const UNIT_MAP = {
+    'lf': 'LF', 'l.f.': 'LF', 'ft': 'LF', 'ft.': 'LF', 'feet': 'LF', 'foot': 'LF',
+    'ea': 'EA', 'each': 'EA', 'ea.': 'EA', 'ct': 'CT', 'ct.': 'CT', 'count': 'CT',
+    'rl': 'RL', 'reel': 'RL', 'reels': 'RL', 'tn': 'TN', 'ton': 'TN', 'tons': 'TN',
+    'lb': 'LB', 'lbs': 'LB', 'pound': 'LB'
+  };
+  function normalizeHeader(h) { return (h || '').toString().trim().toLowerCase(); }
+  function mapColumns(headers) {
+    const map = {};
+    const normalized = headers.map(normalizeHeader);
+    for (const [field, aliases] of Object.entries(HEADER_ALIASES)) {
+      let idx = -1;
+      for (const alias of aliases) { idx = normalized.indexOf(alias); if (idx !== -1) break; }
+      map[field] = idx;
+    }
+    return map;
+  }
+  function normalizeUnit(raw) {
+    if (!raw) return { normalized: '', raw: '' };
+    const cleaned = raw.toString().trim();
+    const mapped = UNIT_MAP[cleaned.toLowerCase()];
+    return { normalized: mapped || cleaned.toUpperCase(), raw: cleaned };
+  }
+  function parseMoneyOrNumber(val) {
+    if (val === '' || val === null || val === undefined) return NaN;
+    return parseFloat(val.toString().replace(/[$,]/g, '').trim());
+  }
+
+  let currentFile = null;
+  let parsedRows = [];
+  let issues = [];
+  let blockingErrors = 0;
+  let duplicateCount = 0;
+
+  function resetImportFlow() {
+    currentFile = null; parsedRows = []; issues = []; blockingErrors = 0; duplicateCount = 0;
+    document.getElementById('fileInput').value = '';
+    document.getElementById('fileChip').classList.remove('show');
+    document.getElementById('dropzone').style.display = 'block';
+    document.getElementById('parseBtn').disabled = true;
+    document.getElementById('uploadPanel').classList.remove('hidden');
+    document.getElementById('reviewPanel').classList.add('hidden');
+    document.getElementById('successPanel').classList.add('hidden');
+  }
+
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  const fileChip = document.getElementById('fileChip');
+
+  dropzone.addEventListener('click', () => fileInput.click());
+  dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+  dropzone.addEventListener('drop', (e) => { e.preventDefault(); dropzone.classList.remove('drag'); if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]); });
+  fileInput.addEventListener('change', (e) => { if (e.target.files.length) handleFile(e.target.files[0]); });
+  document.getElementById('fileChipRemove').addEventListener('click', () => {
+    currentFile = null; fileInput.value = ''; fileChip.classList.remove('show');
+    dropzone.style.display = 'block'; document.getElementById('parseBtn').disabled = true;
+  });
+  function handleFile(file) {
+    currentFile = file;
+    document.getElementById('fileChipName').textContent = file.name;
+    fileChip.classList.add('show'); dropzone.style.display = 'none';
+    document.getElementById('parseBtn').disabled = false;
+  }
+
+  document.getElementById('parseBtn').addEventListener('click', () => {
+    if (!currentFile) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(e.target.result, { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+        processRows(rows);
+      } catch (err) { showToast('Could not read this file: ' + err.message); }
+    };
+    reader.readAsArrayBuffer(currentFile);
+  });
+
+  function processRows(rows) {
+    issues = []; parsedRows = []; blockingErrors = 0; duplicateCount = 0;
+    if (!rows || rows.length === 0) { issues.push({ type: 'error', message: 'The file appears to be empty.' }); blockingErrors++; renderReview(); return; }
+
+    const headers = rows[0];
+    const colMap = mapColumns(headers);
+    const missing = [];
+    if (colMap.description === -1) missing.push('Description');
+    if (colMap.quantity === -1) missing.push('Quantity / Estimated Quantity');
+    if (missing.length > 0) { issues.push({ type: 'error', message: `Missing required column(s): ${missing.join(', ')}.` }); blockingErrors++; renderReview(); return; }
+
+    const dataRows = rows.slice(1).filter(r => r.some(cell => cell !== '' && cell !== null && cell !== undefined));
+    if (dataRows.length === 0) { issues.push({ type: 'error', message: 'Header row found, but no data rows underneath it.' }); blockingErrors++; renderReview(); return; }
+
+    const seenItemNumbers = new Map();
+    dataRows.forEach((row, i) => {
+      const rowNum = i + 2;
+      const item_number = colMap.item_number !== -1 ? (row[colMap.item_number] ?? '').toString().trim() : '';
+      const description = (row[colMap.description] ?? '').toString().trim();
+      const qtyRaw = row[colMap.quantity];
+      const unitRaw = colMap.unit !== -1 ? row[colMap.unit] : '';
+      const priceRaw = colMap.unit_price !== -1 ? row[colMap.unit_price] : '';
+      const extRaw = colMap.extended_price !== -1 ? row[colMap.extended_price] : '';
+
+      const quantity = parseMoneyOrNumber(qtyRaw);
+      const unit_price = priceRaw !== '' ? parseMoneyOrNumber(priceRaw) : null;
+
+      let rowError = null;
+      if (qtyRaw === '' || qtyRaw === null || qtyRaw === undefined) rowError = `Row ${rowNum}: missing Quantity`;
+      else if (isNaN(quantity)) rowError = `Row ${rowNum}: Quantity "${qtyRaw}" is not a number`;
+      else if (priceRaw !== '' && isNaN(unit_price)) rowError = `Row ${rowNum}: Unit Price "${priceRaw}" is not a number`;
+
+      if (rowError) { issues.push({ type: 'error', message: rowError }); blockingErrors++; return; }
+
+      let isDup = false;
+      if (item_number) {
+        if (seenItemNumbers.has(item_number)) {
+          isDup = true; duplicateCount++;
+          issues.push({ type: 'warning', message: `Row ${rowNum}: duplicate Item/MPN "${item_number}" (also row ${seenItemNumbers.get(item_number)}).` });
+        } else { seenItemNumbers.set(item_number, rowNum); }
+      }
+
+      const unit = normalizeUnit(unitRaw);
+      const extended_price = extRaw !== '' ? parseMoneyOrNumber(extRaw) : (unit_price !== null ? Math.round(unit_price * quantity * 100) / 100 : null);
+
+      parsedRows.push({
+        item_number, description, quantity, unit_raw: unit.raw, unit_normalized: unit.normalized,
+        unit_price, extended_price, is_duplicate_flag: isDup, selected: true, is_wire: true
+      });
+    });
+
+    renderReview();
+  }
+
+  function renderReview() {
+    document.getElementById('uploadPanel').classList.add('hidden');
+    document.getElementById('reviewPanel').classList.remove('hidden');
+
+    document.getElementById('statTotal').textContent = parsedRows.length + blockingErrors;
+    document.getElementById('statErrors').textContent = blockingErrors;
+    document.getElementById('statWarnings').textContent = duplicateCount;
+
+    const sub = document.getElementById('reviewSub');
+    if (blockingErrors > 0 && parsedRows.length === 0) sub.textContent = 'This file has errors that need fixing before it can be imported.';
+    else if (blockingErrors > 0) sub.textContent = `${blockingErrors} row(s) will be skipped due to errors. Pick which of the rest to import below.`;
+    else sub.textContent = 'Pick which items to bring into this job, then confirm.';
+
+    const issuesWrap = document.getElementById('issuesWrap');
+    const issueList = document.getElementById('issueList');
+    if (issues.length > 0) {
+      issuesWrap.classList.remove('hidden');
+      issueList.innerHTML = issues.map(iss => `
+        <div class="issue-row"><span class="badge ${iss.type === 'error' ? 'badge-error' : 'badge-warn'}">${iss.type === 'error' ? 'Error' : 'Duplicate'}</span><span>${iss.message}</span></div>
+      `).join('');
+    } else { issuesWrap.classList.add('hidden'); }
+
+    const table = document.getElementById('previewTable');
+    if (parsedRows.length === 0) { table.innerHTML = ''; }
+    else {
+      const rowsHtml = parsedRows.map((r, idx) => `
+        <tr class="${r.is_duplicate_flag ? 'dup' : ''}">
+          <td><input type="checkbox" class="row-check" data-idx="${idx}" ${r.selected ? 'checked' : ''}></td>
+          <td>${r.item_number || '—'}</td>
+          <td>${r.description}</td>
+          <td>${r.quantity}</td>
+          <td>${r.unit_normalized}${r.unit_normalized !== r.unit_raw && r.unit_raw ? ` <span style="color:var(--ink-soft)">(was ${r.unit_raw})</span>` : ''}</td>
+          <td>${r.unit_price ?? '—'}</td>
+          <td>${r.extended_price ?? '—'}</td>
+        </tr>
+      `).join('');
+      table.innerHTML = `<thead><tr><th>Import?</th><th>MPN / Item</th><th>Description</th><th>Qty</th><th>Unit</th><th>Unit Price</th><th>Ext Price</th></tr></thead><tbody>${rowsHtml}</tbody>`;
+      document.querySelectorAll('.row-check').forEach(cb => {
+        cb.addEventListener('change', (e) => {
+          parsedRows[parseInt(e.target.dataset.idx, 10)].selected = e.target.checked;
+          updateSelectionCount();
+        });
+      });
+    }
+    updateSelectionCount();
+  }
+
+  function updateSelectionCount() {
+    const selected = parsedRows.filter(r => r.selected).length;
+    document.getElementById('selectedCount').textContent = selected;
+    document.getElementById('selectableCount').textContent = parsedRows.length;
+    document.getElementById('confirmImportBtn').disabled = selected === 0;
+  }
+  document.getElementById('selectAllBtn').addEventListener('click', () => {
+    parsedRows.forEach(r => r.selected = true);
+    document.querySelectorAll('.row-check').forEach(cb => cb.checked = true);
+    updateSelectionCount();
+  });
+  document.getElementById('selectNoneBtn').addEventListener('click', () => {
+    parsedRows.forEach(r => r.selected = false);
+    document.querySelectorAll('.row-check').forEach(cb => cb.checked = false);
+    updateSelectionCount();
+  });
+  document.getElementById('backBtn').addEventListener('click', resetImportFlow);
+
+  document.getElementById('confirmImportBtn').addEventListener('click', async () => {
+    if (!supabaseClient) { showToast('Connect Supabase first.'); return; }
+    const rowsToImport = parsedRows.filter(r => r.selected);
+    if (rowsToImport.length === 0) return;
+
+    const btn = document.getElementById('confirmImportBtn');
+    btn.disabled = true; btn.textContent = 'Importing…';
+
+    try {
+      const { data: activeVersions } = await supabaseClient
+        .from('bom_imports').select('id, version_number').eq('project_id', currentProject.id).eq('is_active', true).order('version_number', { ascending: false });
+      const previousActiveRows = activeVersions || [];
+      const nextVersion = previousActiveRows.length > 0 ? previousActiveRows[0].version_number + 1 : 1;
+
+      const { data: newImport, error: importError } = await supabaseClient
+        .from('bom_imports')
+        .insert({ project_id: currentProject.id, version_number: nextVersion, file_name: currentFile.name, is_active: true, total_items: rowsToImport.length })
+        .select().single();
+      if (importError) throw importError;
+
+      const itemsToInsert = rowsToImport.map(({ selected, ...r }) => ({ ...r, bom_import_id: newImport.id }));
+      for (let i = 0; i < itemsToInsert.length; i += 500) {
+        const { error: itemsError } = await supabaseClient.from('bom_items').insert(itemsToInsert.slice(i, i + 500));
+        if (itemsError) throw itemsError;
+      }
+
+      // Deactivate every previously-active row for this project (self-heals any duplicates from before)
+      for (const row of previousActiveRows) {
+        await supabaseClient.from('bom_imports').update({ is_active: false, superseded_by: newImport.id }).eq('id', row.id);
+      }
+      await supabaseClient.from('projects')
+        .update({ last_bom_import: new Date().toISOString(), import_date: new Date().toISOString().split('T')[0] })
+        .eq('id', currentProject.id);
+
+      activeImportId = newImport.id;
+      activeImportVersion = nextVersion;
+
+      document.getElementById('reviewPanel').classList.add('hidden');
+      document.getElementById('successPanel').classList.remove('hidden');
+      document.getElementById('successHeadline').textContent = `${rowsToImport.length} items imported`;
+      document.getElementById('successSub').textContent = `Saved as version ${nextVersion} for this job. Go to Wire Summary to mark which items are wire.`;
+    } catch (err) {
+      showToast('Import failed: ' + err.message);
+      btn.disabled = false; btn.textContent = 'Import Selected';
+    }
+  });
+
+  document.getElementById('importAnotherBtn').addEventListener('click', resetImportFlow);
+
+  // ---------------------------------------------------------
+  // WIRE SUMMARY TAB
+  // ---------------------------------------------------------
+  let currentBomItems = [];
+
+  async function renderWireSummary() {
+    if (!supabaseClient || !currentProject) return;
+    await loadActiveBomForProject();
+
+    if (!activeImportId) {
+      document.getElementById('wireTotalsList').innerHTML = '';
+      document.getElementById('wireEmptyNote').textContent = 'No BOM imported for this job yet — use the BOM Import tab.';
+      document.getElementById('wireEmptyNote').classList.remove('hidden');
+      document.getElementById('wireTypeCount').textContent = '';
+      document.getElementById('wireItemsPanel').classList.add('hidden');
+      currentBomItems = [];
+      return;
+    }
+
+    document.getElementById('wireItemsPanel').classList.remove('hidden');
+
+    const { data, error } = await supabaseClient.from('bom_items').select('*').eq('bom_import_id', activeImportId).order('description');
+    if (error) { showToast('Error loading items: ' + error.message); return; }
+    currentBomItems = data || [];
+
+    renderWireTotals();
+    renderWireItemsList(document.getElementById('wireItemsSearch').value || '');
+  }
+
+  function renderWireTotals() {
+    const groups = new Map();
+    currentBomItems.forEach(item => {
+      const key = `${item.description}__${item.unit_normalized || ''}`;
+      if (!groups.has(key)) groups.set(key, { description: item.description, unit: item.unit_normalized || '', quantity: 0, itemNumbers: new Set() });
+      const g = groups.get(key);
+      g.quantity += parseFloat(item.quantity) || 0;
+      if (item.item_number) g.itemNumbers.add(item.item_number);
+    });
+    const grouped = Array.from(groups.values()).sort((a, b) => a.description.localeCompare(b.description));
+
+    document.getElementById('wireTypeCount').textContent = `${grouped.length} item type${grouped.length === 1 ? '' : 's'}`;
+    const wrap = document.getElementById('wireTotalsList');
+    const emptyNote = document.getElementById('wireEmptyNote');
+
+    if (grouped.length === 0) {
+      wrap.innerHTML = '';
+      emptyNote.textContent = 'Nothing left in this BOM — remove items below or delete the whole import.';
+      emptyNote.classList.remove('hidden');
+      return;
+    }
+    emptyNote.classList.add('hidden');
+    wrap.innerHTML = grouped.map(g => `
+      <div class="wire-row">
+        <div><div class="wire-desc">${g.description}</div>${g.itemNumbers.size > 0 ? `<div class="wire-meta">${Array.from(g.itemNumbers).join(', ')}</div>` : ''}</div>
+        <div class="wire-qty">${g.quantity.toLocaleString()} ${g.unit}</div>
+      </div>
+    `).join('');
+  }
+
+  function renderWireItemsList(searchTerm) {
+    const term = searchTerm.toLowerCase();
+    const filtered = currentBomItems.filter(i => !term || i.description.toLowerCase().includes(term));
+    const wrap = document.getElementById('wireItemsList');
+
+    if (filtered.length === 0) {
+      wrap.innerHTML = `<p class="sub" style="padding:12px 0;">No items match.</p>`;
+      return;
+    }
+
+    wrap.innerHTML = filtered.map(item => `
+      <div class="item-row">
+        <div class="item-main">
+          <div class="item-desc">${item.description}</div>
+          <div class="item-meta">${item.item_number ? item.item_number + ' · ' : ''}${item.quantity} ${item.unit_normalized || ''}</div>
+        </div>
+        <button class="btn-secondary remove-item-btn" data-id="${item.id}" style="color:var(--red); border-color:#f0c9c9; font-size:12px; padding:6px 12px;">Remove</button>
+      </div>
+    `).join('');
+
+    wrap.querySelectorAll('.remove-item-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const itemId = e.target.dataset.id;
+        const { error } = await supabaseClient.from('bom_items').delete().eq('id', itemId);
+        if (error) { showToast('Could not remove: ' + error.message); return; }
+        currentBomItems = currentBomItems.filter(i => i.id !== itemId);
+        renderWireTotals();
+        renderWireItemsList(document.getElementById('wireItemsSearch').value || '');
+        showToast('Item removed.');
+      });
+    });
+  }
+
+  document.getElementById('wireItemsSearch').addEventListener('input', (e) => renderWireItemsList(e.target.value));
+
+  document.getElementById('deleteBomBtn').addEventListener('click', async () => {
+    if (!activeImportId) return;
+    const confirmed = confirm(`Delete this entire BOM import (version ${activeImportVersion}) for "${currentProject.project_number}"?\n\nAll ${currentBomItems.length} items in it will be permanently removed. This cannot be undone.`);
+    if (!confirmed) return;
+
+    const { error } = await supabaseClient.from('bom_imports').delete().eq('id', activeImportId);
+    if (error) { showToast('Could not delete: ' + error.message); return; }
+
+    showToast('BOM import deleted.');
+    activeImportId = null; activeImportVersion = null; currentBomItems = [];
+    renderWireSummary();
+  });
+
+  // ---------------------------------------------------------
+  // COMPANY WIRE REPORT
+  // ---------------------------------------------------------
+  let reportRawItems = [];      // every bom_item from every active BOM, with project info attached
+  let nameMap = new Map();      // raw_description_key -> { canonical_name, raw_description_display, id }
+  let projectLabelMap = new Map(); // project_id -> "24-118 — Blue Diamond Signals"
+  let reportSortMode = 'name';  // 'name' | 'total'
+  let reportExpanded = new Set();
+
+  function normalizeDescKey(desc) {
+    return (desc || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+
+  document.getElementById('wireReportBtn').addEventListener('click', openWireReport);
+  document.getElementById('backFromReportBtn').addEventListener('click', () => {
+    document.getElementById('wireReportView').classList.add('hidden');
+    document.getElementById('jobListView').classList.remove('hidden');
+  });
+
+  async function openWireReport() {
+    document.getElementById('jobListView').classList.add('hidden');
+    document.getElementById('jobDetailView').classList.add('hidden');
+    document.getElementById('wireReportView').classList.remove('hidden');
+    await loadWireReportData();
+  }
+
+  async function loadWireReportData() {
+    if (!supabaseClient) return;
+
+    const { data: allProjects } = await supabaseClient.from('projects').select('id, project_number, project_name');
+    projectLabelMap = new Map((allProjects || []).map(p => [p.id, `${p.project_number} — ${p.project_name}`]));
+
+    const { data: activeImports, error: impErr } = await supabaseClient
+      .from('bom_imports').select('id, project_id').eq('is_active', true);
+    if (impErr) { showToast('Error loading BOMs: ' + impErr.message); return; }
+
+    if (!activeImports || activeImports.length === 0) {
+      reportRawItems = [];
+      renderReportGroups();
+      renderNameMapList('');
+      return;
+    }
+
+    const importIds = activeImports.map(i => i.id);
+    const importToProject = new Map(activeImports.map(i => [i.id, i.project_id]));
+
+    const { data: items, error: itemsErr } = await supabaseClient
+      .from('bom_items').select('*').in('bom_import_id', importIds);
+    if (itemsErr) { showToast('Error loading items: ' + itemsErr.message); return; }
+
+    const { data: mapRows, error: mapErr } = await supabaseClient.from('wire_name_map').select('*');
+    if (mapErr) { showToast('Error loading wire names: ' + mapErr.message); return; }
+
+    nameMap = new Map((mapRows || []).map(r => [r.raw_description_key, r]));
+
+    reportRawItems = (items || []).map(item => ({
+      ...item,
+      project_id: importToProject.get(item.bom_import_id)
+    }));
+
+    renderReportGroups();
+    renderNameMapList(document.getElementById('nameMapSearch').value || '');
+  }
+
+  function canonicalNameFor(description) {
+    const key = normalizeDescKey(description);
+    const mapped = nameMap.get(key);
+    return mapped ? mapped.canonical_name : description;
+  }
+
+  function renderReportGroups() {
+    const groups = new Map();
+    reportRawItems.forEach(item => {
+      const canonical = canonicalNameFor(item.description);
+      const key = `${canonical}__${item.unit_normalized || ''}`;
+      if (!groups.has(key)) groups.set(key, { name: canonical, unit: item.unit_normalized || '', total: 0, jobs: new Map() });
+      const g = groups.get(key);
+      const qty = parseFloat(item.quantity) || 0;
+      g.total += qty;
+
+      const label = projectLabelMap.get(item.project_id) || 'Unknown Job';
+      if (!g.jobs.has(item.project_id)) g.jobs.set(item.project_id, { label, quantity: 0 });
+      g.jobs.get(item.project_id).quantity += qty;
+    });
+
+    let grouped = Array.from(groups.values());
+    if (reportSortMode === 'total') grouped.sort((a, b) => b.total - a.total);
+    else grouped.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+
+    document.getElementById('reportTypeCount').textContent = `${grouped.length} wire type${grouped.length === 1 ? '' : 's'}`;
+
+    const wrap = document.getElementById('reportGroups');
+    const emptyNote = document.getElementById('reportEmptyNote');
+
+    if (grouped.length === 0) {
+      wrap.innerHTML = '';
+      emptyNote.classList.remove('hidden');
+      return;
+    }
+    emptyNote.classList.add('hidden');
+
+    wrap.innerHTML = grouped.map(g => {
+      const key = `${g.name}__${g.unit}`;
+      const isOpen = reportExpanded.has(key);
+      const jobRows = Array.from(g.jobs.values()).sort((a, b) => a.label.localeCompare(b.label));
+      return `
+        <div class="wire-row" style="cursor:pointer; align-items:flex-start;" data-group-key="${key}">
+          <div style="flex:1;">
+            <div class="wire-desc">${isOpen ? '▼' : '▶'} ${g.name}</div>
+            <div class="wire-meta">${g.jobs.size} job${g.jobs.size === 1 ? '' : 's'}</div>
+            ${isOpen ? `
+              <div style="margin-top:8px; padding-left:14px; border-left:2px solid var(--line);">
+                ${jobRows.map(j => `
+                  <div style="display:flex; justify-content:space-between; padding:5px 0; font-size:13px; color:var(--ink-soft);">
+                    <span>${j.label}</span><span>${j.quantity.toLocaleString()} ${g.unit}</span>
+                  </div>
+                `).join('')}
+              </div>` : ''}
+          </div>
+          <div class="wire-qty">${g.total.toLocaleString()} ${g.unit}</div>
+        </div>
+      `;
+    }).join('');
+
+    wrap.querySelectorAll('[data-group-key]').forEach(el => {
+      el.addEventListener('click', () => {
+        const key = el.dataset.groupKey;
+        if (reportExpanded.has(key)) reportExpanded.delete(key); else reportExpanded.add(key);
+        renderReportGroups();
+      });
+    });
+  }
+
+  document.getElementById('sortByNameBtn').addEventListener('click', () => { reportSortMode = 'name'; renderReportGroups(); });
+  document.getElementById('sortByTotalBtn').addEventListener('click', () => { reportSortMode = 'total'; renderReportGroups(); });
+
+  function renderNameMapList(searchTerm) {
+    const term = searchTerm.toLowerCase();
+
+    // Unique raw descriptions across all imported items, each with an example unit for display
+    const uniqueDescs = new Map();
+    reportRawItems.forEach(item => {
+      const key = normalizeDescKey(item.description);
+      if (!uniqueDescs.has(key)) uniqueDescs.set(key, item.description);
+    });
+
+    let rows = Array.from(uniqueDescs.entries()).map(([key, display]) => {
+      const mapped = nameMap.get(key);
+      return { key, display, canonical: mapped ? mapped.canonical_name : display };
+    });
+
+    if (term) rows = rows.filter(r => r.display.toLowerCase().includes(term) || r.canonical.toLowerCase().includes(term));
+    rows.sort((a, b) => a.display.localeCompare(b.display));
+
+    const wrap = document.getElementById('nameMapList');
+    wrap.innerHTML = rows.map(r => `
+      <div class="item-row">
+        <div class="item-main">
+          <div class="item-meta">Raw: ${r.display}</div>
+          <input type="text" class="name-map-input" data-key="${r.key}" data-display="${r.display.replace(/"/g, '&quot;')}" value="${r.canonical}" style="width:100%; margin-top:4px; padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13.5px;">
+        </div>
+      </div>
+    `).join('');
+
+    wrap.querySelectorAll('.name-map-input').forEach(input => {
+      input.addEventListener('change', async (e) => {
+        const key = e.target.dataset.key;
+        const display = e.target.dataset.display;
+        const newName = e.target.value.trim() || display;
+        const { error } = await supabaseClient.from('wire_name_map').upsert({
+          raw_description_key: key,
+          raw_description_display: display,
+          canonical_name: newName,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'raw_description_key' });
+        if (error) { showToast('Could not save: ' + error.message); return; }
+        nameMap.set(key, { raw_description_key: key, raw_description_display: display, canonical_name: newName });
+        showToast(`"${display}" now reports as "${newName}"`);
+        renderReportGroups();
+      });
+    });
+  }
+
+  document.getElementById('nameMapSearch').addEventListener('input', (e) => renderNameMapList(e.target.value));
+
+  // ---------------------------------------------------------
+  loadProjects();
+</script>
+
+</body>
+</html>
