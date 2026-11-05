@@ -309,11 +309,15 @@ async function loadFromSheet() {
         notes: r.notes || '',
         source: r.source || '',
         poDate: r.poDate || '',
+        prodLeadTime: r.prodLeadTime || '',
+        subReceivedDate: r.subReceivedDate || '',
+        esdEnteredDate: r.esdEnteredDate || '',
         qty: r.qty || '',
         total: r.total || '',
       }));
       nextId = Math.max(...items.map(i => i.id), 0) + 1;
     }
+    initMilestoneTracking();
     // Load categories from sheet if present — overrides localStorage
     if (data.categories) {
       try {
@@ -344,8 +348,60 @@ async function loadFromSheet() {
   buildProjFilter(); buildPills(); render(); buildColHeaders();
 }
 
+// ── MILESTONE STAMPS + DAYS ELAPSED ───────────────────────────
+// Remembers each item's stage/ESD as of load (or last save) so we only stamp
+// a date when it actually happens from now on. Older items stay blank ("—").
+let _lastSeen = new Map();
+function initMilestoneTracking() {
+  _lastSeen = new Map(items.map(i => [i.id, { stage: Number(i.stage) || 0, esd: !!(i.esd && String(i.esd).trim()) }]));
+}
+function localToday() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function stampMilestones() {
+  const today = localToday();
+  items.forEach(i => {
+    const prev = _lastSeen.get(i.id);
+    const stage = Number(i.stage) || 0;
+    const hasEsd = !!(i.esd && String(i.esd).trim());
+    // Submittals received: moved from stage 1 (HFR PO cut) to stage 2 or beyond
+    if (prev && prev.stage === 0 && stage >= 1 && !i.subReceivedDate) i.subReceivedDate = today;
+    // ESD received: first time an ESD is entered (new items count too)
+    if ((!prev || !prev.esd) && hasEsd && !i.esdEnteredDate) i.esdEnteredDate = today;
+    _lastSeen.set(i.id, { stage, esd: hasEsd });
+  });
+}
+function toDay(val) {
+  const f = fmtDate(val); if (!f) return null;
+  const m = String(f).match(/^(\d{2})\/(\d{2})\/(\d{4})$/); if (!m) return null;
+  return new Date(+m[3], +m[1]-1, +m[2]);
+}
+// Returns { days, open } or null when there isn't real data to measure
+function elapsed(startVal, endVal, isOpen) {
+  const a = toDay(startVal); if (!a) return null;
+  const b = endVal ? toDay(endVal) : null;
+  if (b) return { days: Math.max(0, Math.round((b - a) / 86400000)), open: false };
+  if (!isOpen) return null;
+  const t = new Date(); t.setHours(0,0,0,0);
+  return { days: Math.max(0, Math.round((t - a) / 86400000)), open: true };
+}
+function getElapsed(i) {
+  const st = Number(i.stage) || 0;
+  return {
+    poToSub:   elapsed(i.poDate, i.subReceivedDate, st === 0),
+    subToRel:  elapsed(i.submittedDate, i.releasedDate, st === 2 || st === 3),
+    relToEsd:  elapsed(i.releasedDate, i.esdEnteredDate, st === 4 && !i.esd),
+  };
+}
+function fmtElapsed(e) {
+  if (!e) return '—';
+  return e.days + ' day' + (e.days !== 1 ? 's' : '') + (e.open ? ' so far' : '');
+}
+
 let _savePending = false;
 async function saveToSheet() {
+  stampMilestones();
   if (saving) { _savePending = true; return; }  // queue another save instead of dropping
   saving = true;
   setSyncStatus('syncing', 'Saving…');
@@ -947,6 +1003,10 @@ const PDF_COLS = [
   { id:'stage',      label:'Stage',       get:i=>(Number(i.stage)+1)+'. '+(STAGES[Number(i.stage)]||'') },
   { id:'esd',        label:'ESD',         get:i=>fmtDate(i.esd)||'' },
   { id:'originalEsd',label:'Original ESD',get:i=>fmtDate(i.originalEsd)||'' },
+  { id:'prodLeadTime',label:'Production Lead Time',get:i=>i.prodLeadTime||'' },
+  { id:'dPoSub',     label:'Days: PO → Submittals', get:i=>{const e=getElapsed(i).poToSub;return e?String(e.days)+(e.open?'+':''):'';} },
+  { id:'dSubRel',    label:'Days: Submittal → Release', get:i=>{const e=getElapsed(i).subToRel;return e?String(e.days)+(e.open?'+':''):'';} },
+  { id:'dRelEsd',    label:'Days: Release → ESD', get:i=>{const e=getElapsed(i).relToEsd;return e?String(e.days)+(e.open?'+':''):'';} },
 ];
 // Default customer-friendly selection
 const PDF_DEFAULT = ['item','project','vendor','esd','stage'];
@@ -1096,6 +1156,7 @@ function showAddForm(editItemOrId) {
       <div class="form-field"><label>PO # (KOJO)</label><input id="fi-po" value="${isEdit?esc(editItem.po):''}" placeholder="e.g. 33173"></div>
       <div class="form-field"><label>Submittal # (Autodesk)</label><input id="fi-subnum" value="${isEdit?esc(editItem.submittalNum||''):''}" placeholder="e.g. 623.12-001R2"></div>
       <div class="form-field"><label>ESD (MM/DD/YYYY)</label><input id="fi-esd" value="${isEdit?esc(editItem.esd||''):''}" placeholder="e.g. 08/15/2026"></div>
+      <div class="form-field"><label>Production lead time</label><input id="fi-leadtime" value="${isEdit?esc(editItem.prodLeadTime||''):''}" placeholder="e.g. 7-10 weeks"></div>
       <div class="form-field"><label>Stage</label><select id="fi-stage">${STAGES.map((s,i)=>`<option value="${i}"${isEdit&&editItem.stage===i?' selected':''}>${i+1}. ${s}</option>`)}</select></div>
       <div class="form-field" style="justify-content:flex-end;padding-bottom:4px"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="fi-ll" ${isEdit&&editItem.longLead?'checked':''}> Long lead item</label></div>
       <div class="form-field" style="grid-column:1/-1"><label>Notes</label><textarea id="fi-notes">${isEdit?esc(editItem.notes||''):''}</textarea></div>
@@ -1114,7 +1175,7 @@ function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;'
 function addItem() {
   const item=document.getElementById('fi-item').value.trim(); const proj=document.getElementById('fi-proj').value.trim();
   if(!item||!proj){alert('Item and project are required.');return;}
-  const _newItem={id:nextId++,item,project:proj,pm:document.getElementById('fi-pm').value.trim(),location:document.getElementById('fi-location').value.trim(),category:document.getElementById('fi-category').value.trim(),vendor:document.getElementById('fi-vendor').value.trim(),po:document.getElementById('fi-po').value.trim(),submittalNum:document.getElementById('fi-subnum').value.trim(),esd:document.getElementById('fi-esd').value.trim(),stage:parseInt(document.getElementById('fi-stage').value),longLead:document.getElementById('fi-ll').checked,notes:document.getElementById('fi-notes').value.trim(),blocked:false};stampEdit(_newItem);items.push(_newItem);
+  const _newItem={id:nextId++,item,project:proj,pm:document.getElementById('fi-pm').value.trim(),location:document.getElementById('fi-location').value.trim(),category:document.getElementById('fi-category').value.trim(),vendor:document.getElementById('fi-vendor').value.trim(),po:document.getElementById('fi-po').value.trim(),submittalNum:document.getElementById('fi-subnum').value.trim(),esd:document.getElementById('fi-esd').value.trim(),prodLeadTime:document.getElementById('fi-leadtime').value.trim(),stage:parseInt(document.getElementById('fi-stage').value),longLead:document.getElementById('fi-ll').checked,notes:document.getElementById('fi-notes').value.trim(),blocked:false};stampEdit(_newItem);items.push(_newItem);
   document.getElementById('add-form').style.display='none';
   buildProjFilter();buildPills();render();saveToSheet();
 }
@@ -1137,7 +1198,7 @@ function saveEdit(id) {
     });
   }
   stampEdit(i);
-  Object.assign(i,{item,project:proj,pm:document.getElementById('fi-pm').value.trim(),location:document.getElementById('fi-location').value.trim(),category:document.getElementById('fi-category').value.trim(),vendor:document.getElementById('fi-vendor').value.trim(),po:document.getElementById('fi-po').value.trim(),submittalNum:document.getElementById('fi-subnum').value.trim(),esd:document.getElementById('fi-esd').value.trim(),stage:parseInt(document.getElementById('fi-stage').value),longLead:document.getElementById('fi-ll').checked,notes:document.getElementById('fi-notes').value.trim()});
+  Object.assign(i,{item,project:proj,pm:document.getElementById('fi-pm').value.trim(),location:document.getElementById('fi-location').value.trim(),category:document.getElementById('fi-category').value.trim(),vendor:document.getElementById('fi-vendor').value.trim(),po:document.getElementById('fi-po').value.trim(),submittalNum:document.getElementById('fi-subnum').value.trim(),esd:document.getElementById('fi-esd').value.trim(),prodLeadTime:document.getElementById('fi-leadtime').value.trim(),stage:parseInt(document.getElementById('fi-stage').value),longLead:document.getElementById('fi-ll').checked,notes:document.getElementById('fi-notes').value.trim()});
   document.getElementById('add-form').style.display='none';
   buildProjFilter();buildPills();render();saveToSheet();
   showDetail(id);
@@ -1180,6 +1241,10 @@ function showDetail(id) {
       <div class="df"><label>Submittal # (Autodesk)</label><input id="ed-submittalNum-${i.id}" value="${esc(i.submittalNum||'')}" style="${inStyle}">${i.submittalTitle&&i.submittalTitle!==i.item?'<span style="font-size:11px;color:var(--text2)">'+esc(i.submittalTitle)+'</span>':''}</div>
       <div class="df"><label>Original ESD <span style="font-size:10px;color:var(--text2)">(baseline — edits don't affect vendor rating)</span></label><input id="ed-originalEsd-${i.id}" value="${esc(i.originalEsd||'')}" placeholder="e.g. 08/15/2026" style="${inStyle}"></div>
       <div class="df"><label>Current ESD (MM/DD/YYYY)</label><input id="ed-esd-${i.id}" value="${esc(i.esd||'')}" placeholder="e.g. 08/15/2026" style="${inStyle}"></div>
+      <div class="df"><label>Production lead time <span style="font-size:10px;color:var(--text2)">(after release)</span></label><input id="ed-prodLeadTime-${i.id}" value="${esc(i.prodLeadTime||'')}" placeholder="e.g. 7-10 weeks" style="${inStyle}"></div>
+      <div class="df" style="grid-column:1/-1"><label>Days elapsed</label>
+        ${(()=>{const e=getElapsed(i);const box=(lbl,v)=>`<div style="flex:1;min-width:140px;background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius);padding:6px 10px"><div style="font-size:10px;color:var(--text2)">${lbl}</div><div style="font-size:13px;font-weight:500;${v&&v.open?'color:var(--warn)':''}">${fmtElapsed(v)}</div></div>`;return `<div style="display:flex;gap:8px;flex-wrap:wrap">${box('PO cut → Submittals received',e.poToSub)}${box('Submittal → Released',e.subToRel)}${box('Released → ESD received',e.relToEsd)}</div>`;})()}
+      </div>
       <div class="df" style="grid-column:1/-1"><label>Risk</label><span><span class="badge ${r}">${{ar:'At risk',wa:'Watch',ok:'On track'}[r]}</span> <span style="font-size:11px;color:var(--text2);margin-left:6px">${calcRiskReason(i)}</span></span></div>
       ${i.qty?`<div class="df"><label>Qty</label><span>${esc(i.qty)}</span></div>`:''}
       ${i.total?`<div class="df"><label>PO value</label><span>$${Number(i.total).toLocaleString()}</span></div>`:''}
@@ -1235,6 +1300,7 @@ function saveDetailEdits(id) {
   i.vendor = val('vendor') ?? i.vendor;
   i.po = val('po') ?? i.po;
   i.submittalNum = val('submittalNum') ?? i.submittalNum;
+  i.prodLeadTime = val('prodLeadTime') ?? i.prodLeadTime;
 
   // ── ESD handling: Original (baseline) + Current, with intent capture ──
   const newOriginal = val('originalEsd');
